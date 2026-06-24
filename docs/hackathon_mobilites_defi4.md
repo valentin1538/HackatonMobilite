@@ -105,6 +105,8 @@ data/
 
 ### Appel API principal
 
+> ✅ **Validé le 2026-06-24** — Script `src/test_api.py` fonctionnel. Test Vincennes → La Défense à 8h30 : 3 itinéraires retournés (RER A ×2 en 20 min, Ligne 1 en 44 min). Format de réponse conforme aux attentes. IDs IDFM récupérés dynamiquement via `/places`.
+
 ```http
 GET https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/journeys
 Headers:

@@ -1,0 +1,57 @@
+{
+  "creneaux_horaires": [
+    { "debut": 0,  "fin": 6,  "niveau": "VERY_LOW",  "score": 10, "label": "Nuit"              },
+    { "debut": 6,  "fin": 7,  "niveau": "LOW",        "score": 8,  "label": "Tôt le matin"      },
+    { "debut": 7,  "fin": 9,  "niveau": "VERY_HIGH",  "score": 1,  "label": "Pointe matin"      },
+    { "debut": 9,  "fin": 11, "niveau": "MEDIUM",     "score": 6,  "label": "Matinée creuse"    },
+    { "debut": 11, "fin": 14, "niveau": "MEDIUM",     "score": 6,  "label": "Milieu de journée" },
+    { "debut": 14, "fin": 16, "niveau": "MEDIUM",     "score": 6,  "label": "Après-midi creux"  },
+    { "debut": 16, "fin": 19, "niveau": "VERY_HIGH",  "score": 1,  "label": "Pointe soir"       },
+    { "debut": 19, "fin": 21, "niveau": "HIGH",       "score": 3,  "label": "Soirée chargée"    },
+    { "debut": 21, "fin": 24, "niveau": "LOW",        "score": 8,  "label": "Soirée creuse"     }
+  ],
+
+  "poids_stations": {
+    "grandes_gares": {
+      "poids": 3,
+      "stations": [
+        "Châtelet - Les Halles",
+        "Gare du Nord",
+        "Gare de Lyon",
+        "Saint-Lazare",
+        "Gare Montparnasse",
+        "La Défense",
+        "Gare de l'Est",
+        "Nation",
+        "République",
+        "Opéra"
+      ]
+    },
+    "gares_importantes": {
+      "poids": 2,
+      "stations": [
+        "Vincennes",
+        "Auber",
+        "Charles de Gaulle - Étoile",
+        "Bastille",
+        "Odéon",
+        "Denfert-Rochereau",
+        "Invalides",
+        "Bibliothèque François Mitterrand",
+        "Madeleine",
+        "Palais Royal - Musée du Louvre"
+      ]
+    },
+    "default": {
+      "poids": 1,
+      "label": "Station standard"
+    }
+  },
+
+  "calcul": {
+    "formule": "score_final = score_horaire * (1 / poids_station), normalisé 0-10",
+    "seuil_alerte_niveau": ["VERY_HIGH", "HIGH"]
+  },
+
+  "note": "Données synthétiques basées sur des patterns horaires connus. À remplacer par les données de validation IDFM (maille horaire) en production."
+}
