@@ -14,38 +14,43 @@ Les calculateurs d'itinéraire actuels (IDFM, SNCF Connect, Google Maps) optimis
 ### Solution
 Un **moteur de recommandation d'itinéraire enrichi** qui ajoute une couche de confort par-dessus les itinéraires existants de l'API IDFM.
 
-Pour chaque option d'itinéraire proposée, le système génère :
-- Des **alertes spécifiques** sur ce qui va poser problème
-- Un **score de confort universel** (0–10) pour comparer les options entre elles
+Pour chaque option d'itinéraire proposée, le système affiche **toujours** les 4 dimensions de confort :
+- 👥 Affluence (niveau de fréquentation à l'heure choisie)
+- 🌡️ Climatisation (matériel roulant des lignes empruntées)
+- ♿ Accessibilité (statut des ascenseurs en temps réel)
+- 🚻 Équipements (toilettes et fontaines à eau disponibles)
+
+Et un **score de confort universel** (0–10) pour comparer les options entre elles.
 
 ### Ce qui nous différencie
 - Pas de profil utilisateur à créer — zéro friction
-- Les alertes remplacent la personnalisation : chaque usager voit ce qui le concerne naturellement
+- Toutes les dimensions toujours visibles — l'usager voit l'état complet d'un coup d'œil
 - Score **dynamique** : ajusté selon le flux d'utilisateurs qui choisissent le même itinéraire (évite l'effet "tout le monde sur le même trajet")
 
 ---
 
 ## 2. Ce que voit l'utilisateur
 
+Les 4 dimensions sont **toujours affichées** pour chaque itinéraire — pas seulement quand c'est problématique. L'utilisateur voit l'état complet d'un seul coup d'œil.
+
 ```
 Paris Vincennes → La Défense   8h30
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Option 1 — RER A direct          28 min
-⚠️  Ascenseur en panne à Auber
-👥  Très chargé à cette heure
-Score confort : 4/10
+  👥 Très chargé   🌡️ Pas de clim   ⚠️ Ascenseur en panne à Auber   🚻 Toilettes dispo
+  Score confort : 4/10
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Option 2 — Ligne 1              34 min    ✅ Recommandé
-👥  Chargé mais acceptable
-Score confort : 7/10
+  👥 Chargé        🌡️ Climatisé     ✅ Accessible                    🚻 Pas de toilettes
+  Score confort : 7/10
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Option 3 — Ligne 9 + RER A      41 min
-💨  Qualité de l'air dégradée ligne 4
-Score confort : 6/10
+  👥 Peu de monde  🌡️ Pas de clim   ✅ Accessible                    🚻 Toilettes dispo
+  Score confort : 6/10
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔍 Filtrer :  ☐ Ascenseurs  ☐ Peu de monde  ☐ Air pur
+🔍 Filtrer :  ☐ Ascenseurs  ☐ Peu de monde  ☐ Climatisé
 ```
 
 ---
@@ -199,17 +204,19 @@ Paramètres:
 
 ## 5. Logique de scoring
 
-### Alertes par dimension
+### Les 4 dimensions — toujours affichées
 
-| Dimension | Source | Seuil | Icône |
+Toutes les dimensions sont affichées pour chaque itinéraire, quel que soit leur état. L'utilisateur voit l'état complet, pas seulement les problèmes.
+
+| Dimension | Source | Icône | Implémentation |
 |---|---|---|---|
-| Accessibilité | État des ascenseurs | Ascenseur en panne sur le trajet | ⚠️ |
-| Affluence | Données synthétiques (modèle horaire) | Créneau HIGH ou VERY_HIGH | 👥 |
-| ~~Qualité de l'air~~ | ~~Dataset retiré (stations aériennes uniquement)~~ | — | — |
-| Équipements | Toilettes RATP | Aucune toilette sur le trajet | 🚻 |
-| Correspondance | API IDFM — sections `transfer` | Durée transfer > 5 min ou distance > 300m | 🚶 |
+| Affluence | `affluence.json` — modèle horaire × station | 👥 | `_score_affluence()` |
+| Climatisation | `climatisation.json` — matériel roulant connu | 🌡️ | `_score_climatisation()` |
+| Accessibilité | API IDFM — `equipment_availability` en temps réel | ♿ | `_score_accessibilite()` |
+| Équipements | `sanitaires.json` + `fontaines.json` | 🚻 | `_score_equipements()` |
+| Correspondances | API IDFM — sections `transfer` | 🚶 | `_score_correspondances()` |
 
-Pas d'alerte = dimension OK, rien affiché.
+> **Note :** la climatisation est affichée à titre informatif. Elle n'entre pas dans le calcul du score.
 
 ### Formule du score universel
 
@@ -308,71 +315,71 @@ score_affiché = score_actuel - impact(utilisateurs_sur_ce_trajet)
 
 ## 6. Roadmap 5 jours
 
-### Jour 1 — Exploration & cadrage technique
+### ✅ Jour 1 — Exploration & cadrage technique
 
-| Qui | Mission |
-|---|---|
-| Tout le monde | Lire les datasets, tester l'API IDFM playground |
-| Data/ML | Ouvrir les 5 datasets, évaluer qualité et format |
-| Backend | Faire un vrai appel API IDFM, comprendre la réponse |
-| Design/UX | Première maquette basse fidélité (papier suffit) |
-| Frontend | Préparer l'environnement technique |
+| Qui | Mission | Statut |
+|---|---|---|
+| Backend | Appel API IDFM `/journeys` fonctionnel (`src/test_api.py`) | ✅ |
+| Data | Audit des datasets disponibles (Airtable hackathon, open data) | ✅ |
+| Data | Identification des datasets exploitables vs inaccessibles | ✅ |
+| Équipe | Cadrage technique : dimensions, score, architecture | ✅ |
 
-**Livrable :** On sait ce que contient chaque dataset + un appel IDFM qui fonctionne
-
----
-
-### Jour 2 — Construction de la couche data
-
-| Qui | Mission |
-|---|---|
-| Data/ML | Nettoyer et normaliser les datasets, construire les tables de lookup par station |
-| Data/ML | Définir les seuils d'alerte pour chaque dimension |
-| Backend | Construire le pipeline d'enrichissement (itinéraire → lookups → alertes) |
-| Design/UX | Maquette haute fidélité, valider avec l'équipe |
-| Frontend | Formulaire de recherche fonctionnel |
-
-**Livrable :** Pour une station donnée, on peut sortir ses alertes
+**Livrable :** Script `test_api.py` validé — 3 itinéraires retournés avec équipements et perturbations.
 
 ---
 
-### Jour 3 — Intégration bout en bout
+### ✅ Jour 2 — Construction de la couche data
 
-| Qui | Mission |
-|---|---|
-| Data/ML | Implémenter le calcul du score universel |
-| Backend | Brancher IDFM + enrichissement + score dans un endpoint unique |
-| Frontend | Afficher les résultats enrichis (alertes + score par option) |
-| Design/UX | Intégrer la charte visuelle dans le frontend |
+| Qui | Mission | Statut |
+|---|---|---|
+| Data | Dataset synthétique affluence (`data/affluence.json`) | ✅ |
+| Data | Dataset synthétique climatisation (`data/climatisation.json`) | ✅ |
+| Data | Intégration fontaines à eau (`data/fontaines-a-eau-dans-le-reseau-ratp.json`) | ✅ |
+| Data | Intégration toilettes RATP (`data/sanitaires-reseau-ratp.json`) | ✅ |
+| Backend | Pipeline d'enrichissement complet (`src/enricher.py`) | ✅ |
+| Backend | Calcul du score de confort pondéré intégré dans l'enricher | ✅ |
 
-**Livrable :** Un trajet réel de A à B retourne des options avec alertes et scores
-
----
-
-### Jour 4 — Finition & charge dynamique
-
-| Qui | Mission |
-|---|---|
-| Data/ML | Affiner les seuils, tester sur plusieurs trajets réels |
-| Backend | Ajouter la logique de charge dynamique |
-| Frontend | Ajouter les filtres optionnels (ascenseurs / peu de monde / air pur) |
-| Design/UX | Polish UI, responsive |
-
-**Livrable :** Produit complet et testable sur une démo
+**Livrable :** `enricher.py` testé — pour Vincennes → La Défense à 8h30 : 3 itinéraires enrichis avec les 4 dimensions et un score 5.8/10.
 
 ---
 
-### Jour 5 — Pitch
+### 🔲 Jour 3 — Intégration bout en bout
 
 | Qui | Mission |
 |---|---|
-| Tout le monde | Tester sur trajets variés, corriger les bugs critiques |
-| Data/ML | Préparer les slides data : sources, méthode, limites |
+| Backend | Créer l'endpoint `POST /itineraries` (Flask ou FastAPI) qui orchestre API IDFM + enricher |
+| Frontend | Formulaire de recherche (départ / arrivée / heure) |
+| Frontend | Page résultats — afficher les 4 dimensions + score pour chaque option |
+| Design/UX | Maquette haute fidélité et charte visuelle |
+
+**Livrable :** Un vrai trajet A → B depuis le navigateur retourne des résultats enrichis.
+
+---
+
+### 🔲 Jour 4 — Finition & charge dynamique
+
+| Qui | Mission |
+|---|---|
+| Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) |
+| Frontend | Filtres optionnels (accessibilité / peu de monde / climatisé) |
+| Frontend | Responsive, polish UI |
+| Data/ML | Tester sur 5+ trajets variés, identifier les cas limites |
+
+**Livrable :** Produit complet et testable sur une démo.
+
+---
+
+### 🔲 Jour 5 — Pitch
+
+| Qui | Mission |
+|---|---|
+| Tout le monde | Tests finaux, bugs critiques |
+| Data/ML | Slides data : sources, méthode, limites |
 | Backend + Frontend | Stabiliser pour la démo live |
 | Design/UX | Storytelling visuel du pitch |
-| Tout le monde | Répéter le pitch (5–10 min) |
+| Tout le monde | Répétition du pitch (5–10 min) |
 
-**Livrable :** Démo live + pitch convaincant
+**Livrable :** Démo live + pitch convaincant.
 
 ---
 
