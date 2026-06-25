@@ -343,18 +343,98 @@ score_affiché = score_actuel - impact(utilisateurs_sur_ce_trajet)
 
 ---
 
-### 🔲 Jour 3 — Intégration bout en bout
+### ✅ Jour 3 — Intégration bout en bout
 
 > **Frontend pris en charge par Claude Design** — l'équipe se concentre sur le backend et la qualité des données.
 
-| Qui | Mission |
-|---|---|
-| Backend | Créer l'endpoint `POST /itineraries` (Flask ou FastAPI) qui orchestre API IDFM + enricher |
-| Backend | CORS activé + format JSON de réponse documenté (pour que Claude Design puisse câbler) |
-| Data/ML | Tester l'enricher sur 10+ trajets variés, relever les anomalies |
-| Data/ML | Documenter le format JSON de sortie de l'enricher |
+| Qui | Mission | Statut |
+|---|---|---|
+| Backend | Créer l'endpoint `POST /itineraries` (FastAPI) qui orchestre API IDFM + enricher | ✅ |
+| Backend | CORS activé + `requirements.txt` créé | ✅ |
+| Data/ML | Tester l'enricher sur 10+ trajets variés, relever les anomalies | ✅ |
+| Data/ML | Documenter le format JSON de sortie de l'enricher | ✅ |
 
-**Livrable :** Endpoint `/itineraries` accessible en local, réponse JSON enrichie documentée.
+**Livrable :** Endpoint `POST /itineraries` fonctionnel en local (`src/api.py`). Réponse JSON enrichie documentée ci-dessous.
+
+---
+
+#### Lancer le serveur
+
+```bash
+cd src
+python -m uvicorn api:app --reload --port 8000
+```
+
+Interface de test interactive disponible sur `http://localhost:8000/docs`.
+
+> ⚠️ Utiliser l'année courante dans le champ `datetime` — l'API IDFM rejette les dates passées.
+
+---
+
+#### Format de la requête
+
+```http
+POST /itineraries
+Content-Type: application/json
+
+{
+  "depart":   "Vincennes",
+  "arrivee":  "La Défense",
+  "datetime": "20260625T083000"
+}
+```
+
+#### Format de la réponse
+
+```json
+{
+  "depart":   "Vincennes",
+  "arrivee":  "La Défense",
+  "datetime": "20260625T083000",
+  "itineraires": [
+    {
+      "duree_min": 28,
+      "nb_correspondances": 0,
+      "lignes": ["A"],
+      "perturbations": [],
+      "dimensions": {
+        "affluence": {
+          "niveau": "VERY_HIGH",
+          "label": "Très chargé",
+          "poids_station": 3,
+          "score": 0.6
+        },
+        "climatisation": {
+          "status": "partiel",
+          "label": "Partiellement climatisé",
+          "lignes": [{ "ligne": "A", "clim": "partiel", "score": 6 }],
+          "score": 6
+        },
+        "accessibilite": {
+          "ok": true,
+          "pannes": [],
+          "nb_checked": 12,
+          "score": 10
+        },
+        "correspondances": {
+          "nb": 0,
+          "max_duree_sec": 0,
+          "details": [],
+          "score": 10
+        },
+        "equipements": {
+          "toilettes": false,
+          "fontaines": false,
+          "score": 2
+        }
+      },
+      "score_confort": 5.8
+    }
+  ]
+}
+```
+
+**Formule du score :** `affluence×0.35 + accessibilité×0.30 + correspondances×0.20 + équipements×0.15`
 
 ---
 
