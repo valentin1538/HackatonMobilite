@@ -168,6 +168,49 @@ def _score_equipements(station_names: list, fontaines_idx: dict, sanitaires_idx:
     return {"toilettes": toilettes, "fontaines": fontaines, "score": score}
 
 
+def _build_business_summary(dimensions: dict, score_confort: float) -> dict:
+    alertes = []
+    points_forts = []
+
+    if dimensions["affluence"]["score"] < 4:
+        alertes.append("Affluence élevée")
+    else:
+        points_forts.append("Affluence modérée")
+
+    if not dimensions["accessibilite"]["ok"]:
+        alertes.append("Ascenseur en panne")
+    else:
+        points_forts.append("Accessibilité stable")
+
+    if dimensions["climatisation"]["status"] == "aucune":
+        alertes.append("Pas de climatisation")
+    elif dimensions["climatisation"]["status"] == "total":
+        points_forts.append("Climatisation présente")
+
+    if dimensions["equipements"]["score"] <= 5:
+        alertes.append("Équipements limités")
+    else:
+        points_forts.append("Équipements disponibles")
+
+    if dimensions["correspondances"]["score"] <= 5:
+        alertes.append("Correspondances longues")
+    else:
+        points_forts.append("Correspondances fluides")
+
+    if score_confort >= 7:
+        recommandation = "Recommandé"
+    elif score_confort >= 5:
+        recommandation = "À considérer"
+    else:
+        recommandation = "À éviter"
+
+    return {
+        "recommandation": recommandation,
+        "alertes": alertes,
+        "points_forts": points_forts,
+    }
+
+
 # ─── Point d'entrée public ──────────────────────────────────────────────────
 
 def enrich(journey: dict, departure_dt: str) -> dict:
@@ -219,6 +262,16 @@ def enrich(journey: dict, departure_dt: str) -> dict:
         1,
     )
 
+    dimensions = {
+        "affluence":      aff,
+        "climatisation":  clim,
+        "accessibilite":  acc,
+        "correspondances": corr,
+        "equipements":    equip,
+    }
+
+    business_summary = _build_business_summary(dimensions, score_confort)
+
     return {
         "duree_min":        journey.get("duration", 0) // 60,
         "nb_correspondances": journey.get("nb_transfers", 0),
@@ -230,15 +283,16 @@ def enrich(journey: dict, departure_dt: str) -> dict:
             }
             for d in journey.get("disruptions", [])
         ],
-        "dimensions": {
-            "affluence":      aff,
-            "climatisation":  clim,
-            "accessibilite":  acc,
-            "correspondances": corr,
-            "equipements":    equip,
-        },
+        "dimensions": dimensions,
         "score_confort": score_confort,
+        "recommandation": business_summary["recommandation"],
+        "business_summary": business_summary,
     }
+
+
+def enrich_journeys(journeys: list, departure_dt: str) -> list:
+    """Enrichit une liste d'itinéraires avec la logique métier de confort."""
+    return [enrich(journey, departure_dt) for journey in journeys]
 
 
 # ─── Demo ────────────────────────────────────────────────────────────────────
@@ -297,6 +351,7 @@ if __name__ == "__main__":
             f"  {ICONES.get(d['affluence']['niveau'], '👥')} {d['affluence']['label']:<22}"
             f"  {CLIM_ICONE.get(d['climatisation']['status'], '🌡️?')} {d['climatisation']['label']:<28}"
         )
+        print(f"  🧭 Recommandation : {result['business_summary']['recommandation']}")
         if d["accessibilite"]["pannes"]:
             print(f"  ⚠️  Ascenseur en panne : {', '.join(p['station'] for p in d['accessibilite']['pannes'])}")
         else:

@@ -7,6 +7,8 @@ from datetime import datetime
 sys.stdout.reconfigure(encoding="utf-8")
 from dotenv import load_dotenv
 
+from src.enricher import enrich_journeys
+
 load_dotenv()
 
 # --- Configuration ---
@@ -93,8 +95,8 @@ def extract_comfort_data(journey: dict) -> dict:
     return comfort
 
 
-def afficher_itineraire(idx: int, journey: dict, comfort: dict):
-    """Affiche un itinéraire et ses données de confort."""
+def afficher_itineraire(idx: int, journey: dict, enriched: dict):
+    """Affiche un itinéraire et ses données de confort métier."""
     sections = journey.get("sections", [])
     lignes = [
         s.get("display_informations", {}).get("label", "")
@@ -104,22 +106,26 @@ def afficher_itineraire(idx: int, journey: dict, comfort: dict):
 
     print(f"\n{'━'*50}")
     print(f"Option {idx + 1} — {' → '.join(lignes) or 'trajet direct'}")
-    print(f"  Durée          : {comfort['duree_totale_min']} min")
-    print(f"  Correspondances: {comfort['nb_correspondances']}")
+    print(f"  Durée          : {enriched['duree_min']} min")
+    print(f"  Correspondances: {enriched['nb_correspondances']}")
+    print(f"  Recommandation : {enriched['business_summary']['recommandation']}")
 
-    if comfort["correspondances"]:
-        for c in comfort["correspondances"]:
+    if enriched['dimensions']['correspondances']['details']:
+        for c in enriched['dimensions']['correspondances']['details']:
             print(f"    └─ Marche {c['duree_sec']}s ({c['mode']})")
 
-    if comfort["perturbations"]:
-        for p in comfort["perturbations"]:
+    if enriched["perturbations"]:
+        for p in enriched["perturbations"]:
             print(f"  ⚠️  [{p['severite']}] {p['message']}")
 
-    if any(a["ascenseur"] != "available" for a in comfort["ascenseurs"]):
-        stations_ko = [a["station"] for a in comfort["ascenseurs"] if a["ascenseur"] != "available"]
+    if not enriched['dimensions']['accessibilite']['ok']:
+        stations_ko = [p['station'] for p in enriched['dimensions']['accessibilite']['pannes']]
         print(f"  ⚠️  Ascenseur indisponible : {', '.join(stations_ko)}")
     else:
         print(f"  ✅  Accessibilité OK")
+
+    if enriched['business_summary']['alertes']:
+        print(f"  ⚠️  Alertes : {', '.join(enriched['business_summary']['alertes'])}")
 
 
 # --- Main ---
@@ -143,9 +149,9 @@ if __name__ == "__main__":
     journeys = get_journeys(dep["id"], arr["id"], HEURE)
     print(f"\n{len(journeys)} itinéraire(s) trouvé(s)")
 
-    for idx, journey in enumerate(journeys):
-        comfort = extract_comfort_data(journey)
-        afficher_itineraire(idx, journey, comfort)
+    enriched_journeys = enrich_journeys(journeys, HEURE)
+    for idx, journey in enumerate(enriched_journeys):
+        afficher_itineraire(idx, journeys[idx], journey)
 
     print(f"\n{'━'*50}")
     print("\nRéponse brute du premier itinéraire (pour debug) :")
