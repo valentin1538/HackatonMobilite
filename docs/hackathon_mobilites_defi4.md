@@ -345,25 +345,29 @@ score_affiché = score_actuel - impact(utilisateurs_sur_ce_trajet)
 
 ### 🔲 Jour 3 — Intégration bout en bout
 
+> **Frontend pris en charge par Claude Design** — l'équipe se concentre sur le backend et la qualité des données.
+
 | Qui | Mission |
 |---|---|
 | Backend | Créer l'endpoint `POST /itineraries` (Flask ou FastAPI) qui orchestre API IDFM + enricher |
-| Frontend | Formulaire de recherche (départ / arrivée / heure) |
-| Frontend | Page résultats — afficher les 4 dimensions + score pour chaque option |
-| Design/UX | Maquette haute fidélité et charte visuelle |
+| Backend | CORS activé + format JSON de réponse documenté (pour que Claude Design puisse câbler) |
+| Data/ML | Tester l'enricher sur 10+ trajets variés, relever les anomalies |
+| Data/ML | Documenter le format JSON de sortie de l'enricher |
 
-**Livrable :** Un vrai trajet A → B depuis le navigateur retourne des résultats enrichis.
+**Livrable :** Endpoint `/itineraries` accessible en local, réponse JSON enrichie documentée.
 
 ---
 
 ### 🔲 Jour 4 — Finition & charge dynamique
 
+> **Frontend intégré par Claude Design** à partir du JSON de l'endpoint.
+
 | Qui | Mission |
 |---|---|
 | Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) |
-| Frontend | Filtres optionnels (accessibilité / peu de monde / climatisé) |
-| Frontend | Responsive, polish UI |
-| Data/ML | Tester sur 5+ trajets variés, identifier les cas limites |
+| Backend | Filtres query params : `?accessible=true&peu_de_monde=true&climatise=true` |
+| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) |
+| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) |
 
 **Livrable :** Produit complet et testable sur une démo.
 
