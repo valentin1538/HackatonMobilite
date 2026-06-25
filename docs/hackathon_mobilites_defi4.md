@@ -438,18 +438,57 @@ Content-Type: application/json
 
 ---
 
-### 🔲 Jour 4 — Finition & charge dynamique
+### ✅ Jour 4 — Finition & charge dynamique
 
 > **Frontend intégré par Claude Design** à partir du JSON de l'endpoint.
 
-| Qui | Mission |
-|---|---|
-| Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) |
-| Backend | Filtres query params : `?accessible=true&peu_de_monde=true&climatise=true` |
-| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) |
-| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) |
+| Qui | Mission | Statut |
+|---|---|---|
+| Backend | Filtres query params : `?accessible=true&peu_de_monde=true&climatise=true` | ✅ |
+| Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) | ✅ |
+| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) | 🔲 |
+| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) | 🔲 |
 
-**Livrable :** Produit complet et testable sur une démo.
+**Livrable :** Filtres et charge dynamique intégrés dans `src/api.py`.
+
+#### Filtres query params
+
+```http
+POST /itineraries?accessible=true&peu_de_monde=true&climatise=true
+```
+
+| Paramètre | Effet |
+|---|---|
+| `accessible=true` | Exclut les itinéraires avec un ascenseur en panne |
+| `peu_de_monde=true` | Garde uniquement les niveaux d'affluence LOW et VERY_LOW |
+| `climatise=true` | Exclut les itinéraires sans aucune climatisation |
+
+Les filtres sont combinables. La réponse inclut le champ `filtres` qui rappelle les paramètres actifs.
+
+#### Charge dynamique
+
+Quand un utilisateur choisit un itinéraire, il appelle :
+
+```http
+POST /itineraries/select
+Content-Type: application/json
+
+{
+  "dep_id":   "stop_area:IDFM:71651",
+  "arr_id":   "stop_area:IDFM:71517",
+  "lignes":   ["A"],
+  "datetime": "20260625T083000"
+}
+```
+
+Le score d'affluence est ajusté lors des prochains appels à `/itineraries` :
+
+```
+malus = min(3.0, nb_utilisateurs_actifs × 0.5)
+score_affluence_affiché = score_affluence - malus
+```
+
+Les compteurs expirent après **30 minutes** d'inactivité. Le champ `charge_dynamique` dans la réponse indique le nombre d'utilisateurs actifs sur cet itinéraire.
 
 ---
 
