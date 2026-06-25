@@ -95,10 +95,12 @@ frontend/
   └── filters/       → filtres optionnels (sans compte)
 
 backend/
-  └── idfm_client    → appel API IDFM /journeys (equipment_details=true)
-  └── enricher       → orchestration des lookups complémentaires
-  └── scorer         → calcul du score par itinéraire
-  └── alerter        → génération des alertes
+  └── api.py         → endpoint POST /itineraries (FastAPI, CORS activé)
+  └── enricher.py    → enrichissement des itinéraires + business_summary
+  └── test_api.py    → script de test CLI contre l'API IDFM
+
+tests/
+  └── test_business_integration.py → tests unitaires enricher
 
 data/
   └── ~~ascenseurs~~ → remplacé par equipment_details=true dans l'appel API
@@ -343,18 +345,22 @@ score_affiché = score_actuel - impact(utilisateurs_sur_ce_trajet)
 
 ---
 
-### 🔲 Jour 3 — Intégration bout en bout
+### ✅ Jour 3 — Intégration bout en bout
 
 > **Frontend pris en charge par Claude Design** — l'équipe se concentre sur le backend et la qualité des données.
 
-| Qui | Mission |
-|---|---|
-| Backend | Créer l'endpoint `POST /itineraries` (Flask ou FastAPI) qui orchestre API IDFM + enricher |
-| Backend | CORS activé + format JSON de réponse documenté (pour que Claude Design puisse câbler) |
-| Data/ML | Tester l'enricher sur 10+ trajets variés, relever les anomalies |
-| Data/ML | Documenter le format JSON de sortie de l'enricher |
+| Qui | Mission | Statut |
+|---|---|---|
+| Backend | Créer l'endpoint `POST /itineraries` (FastAPI) qui orchestre API IDFM + enricher | ✅ `src/api.py` |
+| Backend | CORS activé + `requirements.txt` créé | ✅ |
+| Backend | `_build_business_summary()` — alertes + points forts + recommandation par itinéraire | ✅ `src/enricher.py` |
+| Backend | `tests/test_business_integration.py` — tests unitaires (1 test passant) | ✅ |
+| Data/ML | Tester l'enricher sur 10+ trajets variés, relever les anomalies | ✅ |
+| Data/ML | Documenter le format JSON de sortie de l'enricher | ✅ |
 
-**Livrable :** Endpoint `/itineraries` accessible en local, réponse JSON enrichie documentée.
+**Livrable :** Endpoint `POST /itineraries` fonctionnel. Réponse enrichie avec `business_summary` (alertes, points forts, recommandation).
+
+> ⚠️ La branche `ft_backend` (Wilfried) doit être rebasée sur `main` pour récupérer `api.py` avant merge.
 
 ---
 
@@ -362,12 +368,12 @@ score_affiché = score_actuel - impact(utilisateurs_sur_ce_trajet)
 
 > **Frontend intégré par Claude Design** à partir du JSON de l'endpoint.
 
-| Qui | Mission |
-|---|---|
-| Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) |
-| Backend | Filtres query params : `?accessible=true&peu_de_monde=true&climatise=true` |
-| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) |
-| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) |
+| Qui | Mission | Statut |
+|---|---|---|
+| Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) | 🔲 |
+| Backend | Filtres query params : `?accessible=true&peu_de_monde=true&climatise=true` | 🔲 |
+| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) | 🔲 |
+| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) | 🔲 |
 
 **Livrable :** Produit complet et testable sur une démo.
 
