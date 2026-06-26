@@ -1,14 +1,17 @@
 import sys
 import json
+import pickle
 import requests as _requests
 from pathlib import Path
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR  = Path(__file__).parent.parent / "data"
+MODEL_DIR = Path(__file__).parent.parent / "models"
 
 _DATASETS = None
+_MODEL    = None   # chargé une seule fois (lazy)
 
 # Coordonnées centre Paris pour l'API météo (lat, lon)
 _PARIS_LAT = 48.8566
@@ -44,6 +47,17 @@ def _load():
 
     _DATASETS = (affluence_data, clim_data, fontaines_idx, sanitaires_idx, aeriennes_idx)
     return _DATASETS
+
+
+def _load_model():
+    global _MODEL
+    if _MODEL is not None:
+        return _MODEL
+    model_path = MODEL_DIR / "affluence_model.pkl"
+    if model_path.exists():
+        with open(model_path, "rb") as f:
+            _MODEL = pickle.load(f)
+    return _MODEL
 
 
 # ─── Météo (Open-Meteo, sans clé API) ──────────────────────────────────────
@@ -124,9 +138,23 @@ def _norm(name: str) -> str:
     return name.strip()
 
 
-# ─── Dimension : Affluence ──────────────────────────────────────────────────
+# ─── Dimension : Affluence (ML) ─────────────────────────────────────────────
 
-def _score_affluence(heure: int, station_names: list, affluence_data: dict) -> dict:
+def _niveau_from_score(score: float) -> str:
+    if score >= 8.0:  return "VERY_LOW"
+    if score >= 6.0:  return "LOW"
+    if score >= 4.0:  return "MEDIUM"
+    if score >= 2.0:  return "HIGH"
+    return "VERY_HIGH"
+
+
+def _score_affluence(
+    heure: int,
+    station_names: list,
+    affluence_data: dict,
+    jour_semaine: int = 0,
+) -> dict:
+    # Slot pour le label d'affichage et le fallback règles
     slot = next(
         (s for s in affluence_data["creneaux_horaires"] if s["debut"] <= heure < s["fin"]),
         affluence_data["creneaux_horaires"][0],
@@ -142,14 +170,24 @@ def _score_affluence(heure: int, station_names: list, affluence_data: dict) -> d
             if any(_norm(s) == nn for s in cat.get("stations", [])):
                 poids = max(poids, cat["poids"])
 
-    facteur = {1: 1.0, 2: 0.8, 3: 0.6}.get(poids, 1.0)
-    score = round(min(10.0, max(0.0, slot["score"] * facteur)), 1)
+    model_bundle = _load_model()
+    if model_bundle is not None:
+        model = model_bundle["model"]
+        is_weekend = 1 if jour_semaine >= 5 else 0
+        score_raw = float(model.predict([[heure, jour_semaine, is_weekend, poids]])[0])
+        score = round(min(10.0, max(0.0, score_raw)), 1)
+        niveau = _niveau_from_score(score)
+    else:
+        facteur = {1: 1.0, 2: 0.8, 3: 0.6}.get(poids, 1.0)
+        score = round(min(10.0, max(0.0, slot["score"] * facteur)), 1)
+        niveau = slot["niveau"]
 
     return {
-        "niveau": slot["niveau"],
-        "label": slot["label"],
+        "niveau":        niveau,
+        "label":         slot["label"],
         "poids_station": poids,
-        "score": score,
+        "score":         score,
+        "source":        "ml" if model_bundle else "rules",
     }
 
 
@@ -325,10 +363,13 @@ def enrich(journey: dict, departure_dt: str) -> dict:
 
     try:
         heure = int(departure_dt[9:11])
+        dt_obj = datetime.strptime(departure_dt[:8], "%Y%m%d")
+        jour_semaine = dt_obj.weekday()  # 0=lundi … 6=dimanche
     except (ValueError, IndexError):
         heure = datetime.now().hour
+        jour_semaine = datetime.now().weekday()
 
-    aff   = _score_affluence(heure, station_names, affluence_data)
+    aff   = _score_affluence(heure, station_names, affluence_data, jour_semaine)
     clim  = _score_climatisation(lignes, clim_data)
     acc   = _score_accessibilite(sections)
     corr  = _score_correspondances(sections)
