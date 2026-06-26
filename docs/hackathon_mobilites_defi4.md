@@ -446,10 +446,10 @@ Content-Type: application/json
 |---|---|---|
 | Backend | Filtres query params : `?accessible=true&peu_de_monde=true&climatise=true` | ✅ |
 | Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) | ✅ |
-| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) | 🔲 |
-| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) | 🔲 |
+| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) | ✅ |
+| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) | ✅ |
 
-**Livrable :** Filtres et charge dynamique intégrés dans `src/api.py`.
+**Livrable :** Filtres et charge dynamique intégrés dans `src/api.py`. 22 tests edge cases passants (`tests/test_edge_cases.py`).
 
 #### Filtres query params
 
@@ -542,6 +542,40 @@ Si le système redistribue 10% des voyageurs aux heures de pointe vers des alter
 
 ---
 
-## 8. Pitch en une phrase
+## 8. Chiffres pour le pitch
+
+### Couverture des datasets
+
+| Dataset | Entrées | Stations uniques | Lignes couvertes |
+|---|---|---|---|
+| Fontaines à eau RATP | 81 | 81 | M1–14 + RER A (15 lignes) |
+| Toilettes RATP | 48 | 41 | M1, 5, 6, 7, 10, 12, 13, 14 + RER A, B (10 lignes) |
+| Climatisation | 30 lignes | — | M1–14 + RER A–E + Transilien H/J/K/L/N/P/R + T3a/b |
+| Affluence (synthétique) | 9 créneaux horaires | 20 stations pondérées | Toutes lignes |
+
+### Répartition climatisation réseau RATP/SNCF
+
+| Statut | Lignes | % du réseau couvert |
+|---|---|---|
+| Totalement climatisé | M1, M14, RER E, Transilien H/J/K/L/N/P/R, T3a/b | 12 lignes |
+| Partiellement climatisé | M4, M11, RER A/B/C/D | 6 lignes |
+| Non climatisé | M2, M3, M5, M6, M7, M8, M9, M10, M12, M13 | 12 lignes |
+
+> **Pour le pitch :** 40 % des lignes Métro/RER sont sans climatisation — c'est l'information que l'usager n'a nulle part aujourd'hui.
+
+### Fontaines à eau
+
+- **74** en accès libre (zone non contrôlée)
+- **7** en zone contrôlée (nécessite un titre de transport)
+- Couverture partielle : la majorité des stations n'a pas de fontaine → l'**absence** est une information utile en soi
+
+### Tests de robustesse
+
+- **22 tests automatisés** couvrant les cas extrêmes : nuit, heure de pointe, grande gare, pannes multiples, correspondances longues, lignes inconnues, charge dynamique
+- Tous les tests passent (`pytest tests/` → 22 passed)
+
+---
+
+## 9. Pitch en une phrase
 
 > *"Nous avons enrichi le calculateur d'itinéraire IDFM avec une couche de confort en temps réel — pas un score abstrait, mais des alertes concrètes sur ce qui va vous poser problème, avec un système qui distribue intelligemment les voyageurs pour éviter que tout le monde converge vers le même trajet."*
