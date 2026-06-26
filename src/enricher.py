@@ -1,5 +1,6 @@
 import sys
 import json
+import requests as _requests
 from pathlib import Path
 from datetime import datetime
 
@@ -8,6 +9,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 DATA_DIR = Path(__file__).parent.parent / "data"
 
 _DATASETS = None
+
+# Coordonnées centre Paris pour l'API météo (lat, lon)
+_PARIS_LAT = 48.8566
+_PARIS_LON = 2.3522
 
 
 def _load():
@@ -23,6 +28,9 @@ def _load():
     sanitaires_raw = json.loads(
         (DATA_DIR / "sanitaires-reseau-ratp.json").read_text(encoding="utf-8")
     )
+    aeriennes_data = json.loads(
+        (DATA_DIR / "stations_aeriennes.json").read_text(encoding="utf-8")
+    )
 
     fontaines_idx = {}
     for f in fontaines_raw:
@@ -32,8 +40,80 @@ def _load():
     for s in sanitaires_raw:
         sanitaires_idx.setdefault(_norm(s["station"]), []).append(s)
 
-    _DATASETS = (affluence_data, clim_data, fontaines_idx, sanitaires_idx)
+    aeriennes_idx = {_norm(k): v for k, v in aeriennes_data["stations"].items()}
+
+    _DATASETS = (affluence_data, clim_data, fontaines_idx, sanitaires_idx, aeriennes_idx)
     return _DATASETS
+
+
+# ─── Météo (Open-Meteo, sans clé API) ──────────────────────────────────────
+
+def _fetch_meteo() -> dict:
+    try:
+        r = _requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude":            _PARIS_LAT,
+                "longitude":           _PARIS_LON,
+                "current":             "temperature_2m,precipitation,weathercode",
+                "wind_speed_unit":     "ms",
+                "forecast_days":       1,
+            },
+            timeout=5,
+        )
+        r.raise_for_status()
+        c = r.json().get("current", {})
+        return {
+            "temperature":   c.get("temperature_2m"),
+            "precipitation": c.get("precipitation", 0),
+            "weathercode":   c.get("weathercode", 0),
+        }
+    except Exception:
+        return {"temperature": None, "precipitation": 0, "weathercode": 0}
+
+
+def _score_meteo(meteo: dict, station_names: list, aeriennes_idx: dict) -> dict:
+    temp         = meteo.get("temperature")
+    precipitation = meteo.get("precipitation", 0)
+    weathercode  = meteo.get("weathercode", 0)
+
+    stations_aeriennes = [n for n in station_names if _norm(n) in aeriennes_idx]
+    a_l_air_libre = len(stations_aeriennes) > 0
+
+    alertes = []
+    malus = 0.0
+
+    # Pluie (weathercode 51-99) + sections aériennes
+    pluie = weathercode >= 51 or precipitation > 0.5
+    if pluie and a_l_air_libre:
+        malus += 2.0
+        alertes.append("Pluie sur tronçons aériens")
+    elif pluie:
+        alertes.append("Pluie (trajet couvert)")
+
+    # Canicule (>= 35°C) → pénalise les lignes sans clim
+    canicule = temp is not None and temp >= 35
+    if canicule:
+        malus += 1.0
+        alertes.append("Canicule : préférez une ligne climatisée")
+
+    # Chaleur modérée (28-35°C) → signal informatif
+    chaleur = temp is not None and 28 <= temp < 35
+    if chaleur:
+        alertes.append("Chaleur : vérifiez la climatisation")
+
+    score = round(max(0.0, 10.0 - malus), 1)
+
+    return {
+        "temperature":         temp,
+        "precipitation":       precipitation,
+        "weathercode":         weathercode,
+        "pluie":               pluie,
+        "canicule":            canicule,
+        "stations_aeriennes":  stations_aeriennes,
+        "alertes":             alertes,
+        "score":               score,
+    }
 
 
 def _norm(name: str) -> str:
@@ -226,7 +306,7 @@ def enrich(journey: dict, departure_dt: str) -> dict:
         dict {duree_min, lignes, perturbations, dimensions, score_confort}
         Formule : affluence×0.35 + accessibilité×0.30 + correspondances×0.20 + équipements×0.15
     """
-    affluence_data, clim_data, fontaines_idx, sanitaires_idx = _load()
+    affluence_data, clim_data, fontaines_idx, sanitaires_idx, aeriennes_idx = _load()
 
     sections = journey.get("sections", [])
 
@@ -248,11 +328,13 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     except (ValueError, IndexError):
         heure = datetime.now().hour
 
-    aff  = _score_affluence(heure, station_names, affluence_data)
-    clim = _score_climatisation(lignes, clim_data)
-    acc  = _score_accessibilite(sections)
-    corr = _score_correspondances(sections)
+    aff   = _score_affluence(heure, station_names, affluence_data)
+    clim  = _score_climatisation(lignes, clim_data)
+    acc   = _score_accessibilite(sections)
+    corr  = _score_correspondances(sections)
     equip = _score_equipements(station_names, fontaines_idx, sanitaires_idx)
+    meteo_raw = _fetch_meteo()
+    meteo = _score_meteo(meteo_raw, station_names, aeriennes_idx)
 
     score_confort = round(
         aff["score"]   * 0.35 +
@@ -262,12 +344,17 @@ def enrich(journey: dict, departure_dt: str) -> dict:
         1,
     )
 
+    # Ajustement météo : -1 pt si pluie sur aérien, -0.5 si canicule
+    if meteo["alertes"]:
+        score_confort = round(max(0.0, score_confort - (meteo.get("score", 10) < 10) * 1.0), 1)
+
     dimensions = {
         "affluence":      aff,
         "climatisation":  clim,
         "accessibilite":  acc,
         "correspondances": corr,
         "equipements":    equip,
+        "meteo":          meteo,
     }
 
     business_summary = _build_business_summary(dimensions, score_confort)
