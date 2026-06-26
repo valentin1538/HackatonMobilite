@@ -474,7 +474,7 @@ Content-Type: application/json
 
 ---
 
-### ✅ Jour 4 — Finition & charge dynamique
+### ✅ Jour 4 — Finition & enrichissement
 
 > **Frontend intégré par Claude Design** à partir du JSON de l'endpoint.
 
@@ -482,12 +482,13 @@ Content-Type: application/json
 |---|---|---|
 | Backend | Filtres query params : `?accessible=true&peu_de_monde=true&climatise=true` | ✅ |
 | Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) | ✅ |
-| Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) | ✅ |
-| Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) | ✅ |
-| Data/ML | Intégration météo (Open-Meteo, sans clé) + `data/stations_aeriennes.json` (30 stations OSM) | ✅ |
-| Data/ML | RandomForest affluence : entraîné sur 12 600 échantillons, MAE 1.39, feature jour_semaine | ✅ |
+| Data/ML | 22 tests edge cases (nuit, RER longue distance, grande gare, pannes multiples) | ✅ |
+| Data/ML | Intégration météo Open-Meteo (sans clé) + 30 stations aériennes OSM | ✅ |
+| Data/ML | RandomForest affluence (fallback) : entraîné sur données synthétiques, MAE 1.39/10 | ✅ |
+| Data/ML | **Affluence remplacée par données réelles IDFM 2023** : 761 stations, lookup horaire direct | ✅ |
+| Data/ML | Notebook Jupyter : exploration données, entraînement ML, visualisations, démonstration | ✅ |
 
-**Livrable :** Filtres et charge dynamique intégrés dans `src/api.py`. 22 tests edge cases passants (`tests/test_edge_cases.py`). Dimension météo active (34°C détectés aujourd'hui → alerte "Chaleur : vérifiez la climatisation").
+**Livrable :** Pipeline complet avec données réelles. 22/22 tests passants. Notebook `notebooks/analyse_affluence_ml.ipynb` présentant la démarche ML.
 
 #### Filtres query params
 
@@ -532,13 +533,13 @@ Les compteurs expirent après **30 minutes** d'inactivité. Le champ `charge_dyn
 
 ### 🔲 Jour 5 — Pitch
 
-| Qui | Mission |
-|---|---|
-| Tout le monde | Tests finaux, bugs critiques |
-| Data/ML | Slides data : sources, méthode, limites |
-| Backend + Frontend | Stabiliser pour la démo live |
-| Design/UX | Storytelling visuel du pitch |
-| Tout le monde | Répétition du pitch (5–10 min) |
+| Qui | Mission | Statut |
+|---|---|---|
+| Tout le monde | Tests finaux, bugs critiques | ✅ 22/22 |
+| Data/ML | Notebook Jupyter pour la présentation IA | ✅ |
+| Backend | Stabiliser l'API pour la démo live | ✅ |
+| Design/UX | Storytelling visuel du pitch | 🔲 |
+| Tout le monde | Répétition du pitch (5–10 min) | 🔲 |
 
 **Livrable :** Démo live + pitch convaincant.
 
@@ -612,9 +613,10 @@ Si le système redistribue 10% des voyageurs aux heures de pointe vers des alter
 
 - **22 tests automatisés** couvrant les cas extrêmes : nuit, heure de pointe, grande gare, pannes multiples, correspondances longues, lignes inconnues, charge dynamique
 - Tous les tests passent (`pytest tests/` → 22 passed)
+- Données affluence réelles : Châtelet pic à 18h (12.9%) vs 8h (3.4%) — nuances station/heure invisibles avec les données synthétiques
 
 ---
 
 ## 9. Pitch en une phrase
 
-> *"Nous avons enrichi le calculateur d'itinéraire IDFM avec une couche de confort en temps réel — pas un score abstrait, mais des alertes concrètes sur ce qui va vous poser problème, avec un système qui distribue intelligemment les voyageurs pour éviter que tout le monde converge vers le même trajet."*
+> *"Nous avons enrichi le calculateur d'itinéraire IDFM avec une couche de confort en temps réel — basée sur les vraies données de validation de 761 stations RATP — pour donner à chaque voyageur des alertes concrètes sur l'affluence, les ascenseurs, la météo et la climatisation, avec un score qui s'adapte dynamiquement quand trop d'utilisateurs choisissent le même trajet."*
