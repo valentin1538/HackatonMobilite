@@ -95,17 +95,26 @@ frontend/
   └── filters/       → filtres optionnels (sans compte)
 
 backend/
-  └── idfm_client    → appel API IDFM /journeys (equipment_details=true)
-  └── enricher       → orchestration des lookups complémentaires
-  └── scorer         → calcul du score par itinéraire
-  └── alerter        → génération des alertes
+  └── api.py         → endpoint POST /itineraries (FastAPI, CORS, filtres, charge dynamique)
+  └── enricher.py    → enrichissement : 5 dimensions + météo + score ML
+  └── test_api.py    → script de test CLI contre l'API IDFM
 
 data/
-  └── ~~ascenseurs~~ → remplacé par equipment_details=true dans l'appel API
-  └── ~~air~~        → dataset retiré (stations aériennes uniquement, non pertinent)
-  └── affluence      → données synthétiques (modèle horaire × station)
-  └── equipements    → toilettes RATP (seul fichier statique restant)
-  └── correspondances → sections `transfer` de la réponse API IDFM (natif)
+  └── affluence.json           → patterns horaires × station (données d'entraînement ML)
+  └── climatisation.json       → matériel roulant connu par ligne
+  └── sanitaires-*.json        → toilettes RATP
+  └── fontaines-*.json         → fontaines à eau RATP
+  └── stations_aeriennes.json  → 30 stations aériennes (OSM + compléments M6)
+
+models/
+  └── affluence_model.pkl      → RandomForest entraîné sur les patterns horaires
+
+scripts/
+  └── train_affluence.py       → entraîne et sauvegarde le modèle affluence
+
+tests/
+  └── test_business_integration.py
+  └── test_edge_cases.py
 ```
 
 ### Appel API principal
@@ -210,13 +219,16 @@ Toutes les dimensions sont affichées pour chaque itinéraire, quel que soit leu
 
 | Dimension | Source | Icône | Implémentation |
 |---|---|---|---|
-| Affluence | `affluence.json` — modèle horaire × station | 👥 | `_score_affluence()` |
+| Affluence | `models/affluence_model.pkl` — RandomForest entraîné | 👥 | `_score_affluence()` |
 | Climatisation | `climatisation.json` — matériel roulant connu | 🌡️ | `_score_climatisation()` |
 | Accessibilité | API IDFM — `equipment_availability` en temps réel | ♿ | `_score_accessibilite()` |
 | Équipements | `sanitaires.json` + `fontaines.json` | 🚻 | `_score_equipements()` |
 | Correspondances | API IDFM — sections `transfer` | 🚶 | `_score_correspondances()` |
+| Météo | Open-Meteo API (sans clé) + `stations_aeriennes.json` | 🌧️ | `_score_meteo()` |
 
-> **Note :** la climatisation est affichée à titre informatif. Elle n'entre pas dans le calcul du score.
+> **Note climatisation :** affichée à titre informatif. Elle n'entre pas dans le calcul du score.
+
+> **Note météo :** ajuste le score si pluie sur tronçon aérien (−1 pt) ou canicule (−0.5 pt). Alertes : "Pluie sur tronçons aériens", "Canicule : préférez une ligne climatisée", "Chaleur : vérifiez la climatisation".
 
 ### Formule du score universel
 
@@ -230,23 +242,55 @@ score = (affluence      × 0.35)
 4 dimensions retenues — la qualité de l'air a été retirée faute de données souterraines fiables.
 Chaque dimension est normalisée sur 0–10 avant application des poids.
 
-### Modèle synthétique d'affluence
+### Modèle ML d'affluence (RandomForest)
 
-Faute d'accès aux données de validation IDFM (restreintes aux participants du hackathon), l'affluence est générée via un modèle basé sur des patterns horaires connus :
+#### Pourquoi un modèle ML ?
 
-```python
-AFFLUENCE = {
-    "VERY_HIGH": (7, 9),    # heure de pointe matin  → score 1/10
-    "HIGH":      (16, 19),  # heure de pointe soir   → score 3/10
-    "MEDIUM":    (9, 16),   # journée                → score 6/10
-    "LOW":       (19, 22),  # soirée                 → score 8/10
-    "VERY_LOW":  (22, 7),   # nuit                   → score 10/10
-}
+L'approche initiale utilisait une table de règles fixe dans `affluence.json` :
+
+```
+7h–9h   → score 1/10  (pointe matin)
+9h–16h  → score 6/10  (journée)
+16h–19h → score 1/10  (pointe soir)
+22h–7h  → score 10/10 (nuit)
 ```
 
-Ce score est ensuite pondéré par la fréquentation annuelle de la station (source : Fréquentation en gares SNCF, dataset public) pour distinguer une grande gare d'une station secondaire.
+Problème : à 8h59 le score est 1, à 9h00 il saute à 6 d'un coup. Et semaine/week-end donnaient le même résultat.
 
-**En production**, ce module se branche sur les données de validation IDFM (maille horaire) pour un score basé sur des données réelles.
+Le modèle ML résout les deux : **transitions lisses** et **distinction semaine/week-end**.
+
+#### Ce qu'apprend le modèle
+
+Un **RandomForestRegressor (scikit-learn)** entraîné à partir de ces 4 informations :
+
+| Feature | Exemple | Rôle |
+|---|---|---|
+| `heure` | 8 | Principal prédicteur (pointe vs creux) |
+| `jour_semaine` | 0 = lundi | Distingue les jours de la semaine |
+| `is_weekend` | 0 ou 1 | Le week-end, les heures de pointe sont moins intenses |
+| `poids_station` | 1–3 | Châtelet (3) est plus chargé qu'une station secondaire (1) |
+
+**Entraînement :** 12 600 exemples générés depuis les patterns connus + bruit aléatoire, pour forcer le modèle à apprendre une courbe lisse plutôt qu'un tableau.
+
+#### Prédictions types
+
+```
+Nuit (2h, lundi, poids 1)          → score=9.85  niveau=VERY_LOW
+Pointe matin (8h, lundi, poids 1)  → score=1.08  niveau=VERY_HIGH
+Châtelet à 8h (poids 3)            → score=0.62  niveau=VERY_HIGH
+Week-end 8h (samedi, poids 1)      → score=1.47  niveau=VERY_HIGH  ← moins sévère qu'un lundi
+Milieu de journée (14h, lundi)     → score=5.98  niveau=MEDIUM
+```
+
+**Performances (cross-validation 5 folds) :** MAE ≈ 1.39/10
+
+#### Ce qui n'a pas changé
+
+Le format de sortie est identique (`niveau`, `label`, `score`). Le modèle est un remplacement interne de `_score_affluence()` — `api.py`, les tests et le reste de l'enricher n'ont pas bougé.
+
+Pour réentraîner : `python scripts/train_affluence.py`
+
+**En production**, les features seront alimentées par les vraies données de validation IDFM (maille horaire) — le pipeline reste intact, seules les données d'entraînement changent.
 
 ### Climatisation — dataset synthétique
 
@@ -448,8 +492,10 @@ Content-Type: application/json
 | Backend | Logique de charge dynamique (score ajusté si plusieurs users choisissent le même trajet) | ✅ |
 | Data/ML | Tester sur trajets edge cases (nuit, RER longue distance, grande gare) | ✅ |
 | Data/ML | Préparer les chiffres pour le pitch (couverture datasets, nb stations) | ✅ |
+| Data/ML | Intégration météo (Open-Meteo, sans clé) + `data/stations_aeriennes.json` (30 stations OSM) | ✅ |
+| Data/ML | RandomForest affluence : entraîné sur 12 600 échantillons, MAE 1.39, feature jour_semaine | ✅ |
 
-**Livrable :** Filtres et charge dynamique intégrés dans `src/api.py`. 22 tests edge cases passants (`tests/test_edge_cases.py`).
+**Livrable :** Filtres et charge dynamique intégrés dans `src/api.py`. 22 tests edge cases passants (`tests/test_edge_cases.py`). Dimension météo active (34°C détectés aujourd'hui → alerte "Chaleur : vérifiez la climatisation").
 
 #### Filtres query params
 

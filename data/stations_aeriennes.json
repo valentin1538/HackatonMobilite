@@ -1,0 +1,155 @@
+{
+  "note": "Stations avec tronçons aériens (viaducs). Source : OSM Overpass (bridge=yes/viaduct, layer>=1) + compléments manuels M6. Régénérer avec scripts/generate_stations_aeriennes.py.",
+  "stations": {
+    "Malakoff - Rue Étienne Dolet": {
+      "position": "elevated",
+      "ligne": "13",
+      "source": "osm"
+    },
+    "La Motte-Picquet - Grenelle": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Cambronne": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Dupleix": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Glacière": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Nationale": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Chevaleret": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Quai de la Gare": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Stalingrad": {
+      "position": "elevated",
+      "ligne": "2",
+      "source": "osm"
+    },
+    "Pasteur": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Passy": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Bir-Hakeim": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Sèvres-Lecourbe": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Jaurès": {
+      "position": "elevated",
+      "ligne": "2",
+      "source": "osm"
+    },
+    "La Chapelle": {
+      "position": "elevated",
+      "ligne": "2",
+      "source": "osm"
+    },
+    "Quai de la Rapée": {
+      "position": "elevated",
+      "ligne": "5",
+      "source": "osm"
+    },
+    "Gare d'Austerlitz": {
+      "position": "elevated",
+      "ligne": "5",
+      "source": "osm"
+    },
+    "Barbès - Rochechouart": {
+      "position": "elevated",
+      "ligne": "2",
+      "source": "osm"
+    },
+    "Orly 4": {
+      "position": "elevated",
+      "ligne": "?",
+      "source": "osm"
+    },
+    "Orly 1, 2, 3": {
+      "position": "elevated",
+      "ligne": "?",
+      "source": "osm"
+    },
+    "Terminal 2E - Portes K": {
+      "position": "elevated",
+      "ligne": "2",
+      "source": "osm"
+    },
+    "Terminal 2E - Portes L": {
+      "position": "elevated",
+      "ligne": "2",
+      "source": "osm"
+    },
+    "Châtillon-Montrouge": {
+      "position": "elevated",
+      "ligne": "?",
+      "source": "osm"
+    },
+    "Corvisart": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "osm"
+    },
+    "Coteaux Beauclair": {
+      "position": "elevated",
+      "ligne": "11",
+      "source": "osm"
+    },
+    "Bercy": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "manuel"
+    },
+    "Dugommier": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "manuel"
+    },
+    "Daumesnil": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "manuel"
+    },
+    "Bel-Air": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "manuel"
+    },
+    "Picpus": {
+      "position": "elevated",
+      "ligne": "6",
+      "source": "manuel"
+    }
+  }
+}
