@@ -244,33 +244,53 @@ Chaque dimension est normalisée sur 0–10 avant application des poids.
 
 ### Modèle ML d'affluence (RandomForest)
 
-L'affluence est prédite par un **RandomForestRegressor (scikit-learn)** entraîné sur 12 600 échantillons synthétiques générés depuis les patterns horaires connus.
+#### Pourquoi un modèle ML ?
 
-**Features du modèle :**
-
-| Feature | Type | Description |
-|---|---|---|
-| `heure` | int 0–23 | Heure de départ |
-| `jour_semaine` | int 0–6 | 0=lundi, 6=dimanche |
-| `is_weekend` | bool | Week-end = patterns de pointe plus doux |
-| `poids_station` | int 1–3 | 1=standard, 2=gare importante, 3=grande gare |
-
-**Performances (cross-validation 5 folds) :** MAE ≈ 1.39/10
+L'approche initiale utilisait une table de règles fixe dans `affluence.json` :
 
 ```
-# Prédictions types (modèle entraîné)
+7h–9h   → score 1/10  (pointe matin)
+9h–16h  → score 6/10  (journée)
+16h–19h → score 1/10  (pointe soir)
+22h–7h  → score 10/10 (nuit)
+```
+
+Problème : à 8h59 le score est 1, à 9h00 il saute à 6 d'un coup. Et semaine/week-end donnaient le même résultat.
+
+Le modèle ML résout les deux : **transitions lisses** et **distinction semaine/week-end**.
+
+#### Ce qu'apprend le modèle
+
+Un **RandomForestRegressor (scikit-learn)** entraîné à partir de ces 4 informations :
+
+| Feature | Exemple | Rôle |
+|---|---|---|
+| `heure` | 8 | Principal prédicteur (pointe vs creux) |
+| `jour_semaine` | 0 = lundi | Distingue les jours de la semaine |
+| `is_weekend` | 0 ou 1 | Le week-end, les heures de pointe sont moins intenses |
+| `poids_station` | 1–3 | Châtelet (3) est plus chargé qu'une station secondaire (1) |
+
+**Entraînement :** 12 600 exemples générés depuis les patterns connus + bruit aléatoire, pour forcer le modèle à apprendre une courbe lisse plutôt qu'un tableau.
+
+#### Prédictions types
+
+```
 Nuit (2h, lundi, poids 1)          → score=9.85  niveau=VERY_LOW
 Pointe matin (8h, lundi, poids 1)  → score=1.08  niveau=VERY_HIGH
 Châtelet à 8h (poids 3)            → score=0.62  niveau=VERY_HIGH
-Week-end 8h (poids 1)              → score=1.47  niveau=VERY_HIGH (moins intense)
-Milieu de journée (14h)            → score=5.98  niveau=MEDIUM
+Week-end 8h (samedi, poids 1)      → score=1.47  niveau=VERY_HIGH  ← moins sévère qu'un lundi
+Milieu de journée (14h, lundi)     → score=5.98  niveau=MEDIUM
 ```
 
-Le modèle lisse les transitions entre créneaux (pas de saut brutal à 7h pile) et modélise correctement la différence semaine/week-end.
+**Performances (cross-validation 5 folds) :** MAE ≈ 1.39/10
+
+#### Ce qui n'a pas changé
+
+Le format de sortie est identique (`niveau`, `label`, `score`). Le modèle est un remplacement interne de `_score_affluence()` — `api.py`, les tests et le reste de l'enricher n'ont pas bougé.
 
 Pour réentraîner : `python scripts/train_affluence.py`
 
-**En production**, les features seront remplacées par les données de validation IDFM (maille horaire) — le modèle se rebranché sur données réelles sans changer le reste du pipeline.
+**En production**, les features seront alimentées par les vraies données de validation IDFM (maille horaire) — le pipeline reste intact, seules les données d'entraînement changent.
 
 ### Climatisation — dataset synthétique
 
