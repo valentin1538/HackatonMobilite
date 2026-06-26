@@ -7,7 +7,10 @@ import requests as _requests
 from pathlib import Path
 from datetime import datetime
 
-sys.stdout.reconfigure(encoding="utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except AttributeError:
+    pass  # Jupyter OutStream ne supporte pas reconfigure
 
 DATA_DIR  = Path(__file__).parent.parent / "data"
 MODEL_DIR = Path(__file__).parent.parent / "models"
