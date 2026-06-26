@@ -74,8 +74,9 @@ class TestGrandeGare(unittest.TestCase):
         self.assertLessEqual(score_grande["score"], score_std["score"])
 
     def test_chatelet_pointe_score_tres_bas(self):
-        score = _score_affluence(8, ["Châtelet - Les Halles"], _affluence)
-        self.assertEqual(score["poids_station"], 3)
+        # Données réelles 2023 : pic de Châtelet à 18h (12.9% des validations)
+        score = _score_affluence(18, ["Châtelet - Les Halles"], _affluence)
+        self.assertEqual(score["source"], "reel")
         self.assertLessEqual(score["score"], 1.5)
 
 

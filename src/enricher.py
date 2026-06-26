@@ -1,6 +1,8 @@
 import sys
 import json
 import pickle
+import unicodedata
+import re
 import requests as _requests
 from pathlib import Path
 from datetime import datetime
@@ -12,6 +14,7 @@ MODEL_DIR = Path(__file__).parent.parent / "models"
 
 _DATASETS = None
 _MODEL    = None   # chargé une seule fois (lazy)
+_AFFLUENCE_IDX = None  # index horaire réel (lazy)
 
 # Coordonnées centre Paris pour l'API météo (lat, lon)
 _PARIS_LAT = 48.8566
@@ -58,6 +61,33 @@ def _load_model():
         with open(model_path, "rb") as f:
             _MODEL = pickle.load(f)
     return _MODEL
+
+
+def _load_affluence_idx():
+    global _AFFLUENCE_IDX
+    if _AFFLUENCE_IDX is not None:
+        return _AFFLUENCE_IDX
+    idx_path = DATA_DIR / "affluence_horaire.json"
+    if idx_path.exists():
+        _AFFLUENCE_IDX = json.loads(idx_path.read_text(encoding="utf-8"))
+    return _AFFLUENCE_IDX
+
+
+def _norm_station(name: str) -> str:
+    """Normalisation pour le matching avec le dataset IDFM 2023."""
+    name = name.upper().strip()
+    name = unicodedata.normalize("NFD", name)
+    name = "".join(c for c in name if unicodedata.category(c) != "Mn")
+    name = re.sub(r"[^A-Z0-9 ]", " ", name)
+    return re.sub(r"\s+", " ", name).strip()
+
+
+# Mapping jour_semaine → CAT_JOUR du dataset
+_DOW_TO_CAT = {
+    0: "JOHV", 1: "JOHV", 2: "JOHV", 3: "JOHV", 4: "JOHV",
+    5: "SAHV",
+    6: "DIJFP",
+}
 
 
 # ─── Météo (Open-Meteo, sans clé API) ──────────────────────────────────────
@@ -154,17 +184,48 @@ def _score_affluence(
     affluence_data: dict,
     jour_semaine: int = 0,
 ) -> dict:
-    # Slot pour le label d'affichage et le fallback règles
+    idx     = _load_affluence_idx()
+    cat_jour = _DOW_TO_CAT.get(jour_semaine, "JOHV")
+
+    # ── Source 1 : lookup données réelles ──────────────────────────────────
+    if idx:
+        aliases  = idx.get("aliases", {})
+        stations = idx.get("stations", {})
+        p97      = idx.get("p97_pct", 12.51)
+        best_pct = None
+
+        for name in station_names:
+            key = _norm_station(name)
+            key = aliases.get(key, key)
+            profil_station = stations.get(key, {})
+            profil_cat     = profil_station.get(cat_jour) or profil_station.get("JOHV", {})
+            pct = profil_cat.get(str(heure))
+            if pct is not None:
+                # Prendre la station la plus chargée du trajet (cas le plus pénalisant)
+                if best_pct is None or pct > best_pct:
+                    best_pct = pct
+
+        if best_pct is not None:
+            score  = round(max(0.0, 10.0 * (1 - best_pct / p97)), 1)
+            niveau = _niveau_from_score(score)
+            return {
+                "niveau":      niveau,
+                "label":       _label_from_niveau(niveau),
+                "pct_reel":    round(best_pct, 2),
+                "cat_jour":    cat_jour,
+                "score":       score,
+                "source":      "reel",
+            }
+
+    # ── Source 2 : modèle ML (fallback si station inconnue) ────────────────
     slot = next(
         (s for s in affluence_data["creneaux_horaires"] if s["debut"] <= heure < s["fin"]),
         affluence_data["creneaux_horaires"][0],
     )
-
     poids = 1
-    poids_data = affluence_data["poids_stations"]
     for name in station_names:
         nn = _norm(name)
-        for cat_key, cat in poids_data.items():
+        for cat_key, cat in affluence_data["poids_stations"].items():
             if cat_key == "default":
                 continue
             if any(_norm(s) == nn for s in cat.get("stations", [])):
@@ -172,23 +233,34 @@ def _score_affluence(
 
     model_bundle = _load_model()
     if model_bundle is not None:
-        model = model_bundle["model"]
         is_weekend = 1 if jour_semaine >= 5 else 0
-        score_raw = float(model.predict([[heure, jour_semaine, is_weekend, poids]])[0])
-        score = round(min(10.0, max(0.0, score_raw)), 1)
+        score_raw  = float(model_bundle["model"].predict([[heure, jour_semaine, is_weekend, poids]])[0])
+        score  = round(min(10.0, max(0.0, score_raw)), 1)
         niveau = _niveau_from_score(score)
+        source = "ml"
     else:
         facteur = {1: 1.0, 2: 0.8, 3: 0.6}.get(poids, 1.0)
-        score = round(min(10.0, max(0.0, slot["score"] * facteur)), 1)
-        niveau = slot["niveau"]
+        score   = round(min(10.0, max(0.0, slot["score"] * facteur)), 1)
+        niveau  = slot["niveau"]
+        source  = "rules"
 
     return {
         "niveau":        niveau,
         "label":         slot["label"],
         "poids_station": poids,
         "score":         score,
-        "source":        "ml" if model_bundle else "rules",
+        "source":        source,
     }
+
+
+def _label_from_niveau(niveau: str) -> str:
+    return {
+        "VERY_LOW":  "Très peu de monde",
+        "LOW":       "Peu de monde",
+        "MEDIUM":    "Modéré",
+        "HIGH":      "Chargé",
+        "VERY_HIGH": "Très chargé",
+    }.get(niveau, niveau)
 
 
 # ─── Dimension : Climatisation ──────────────────────────────────────────────
