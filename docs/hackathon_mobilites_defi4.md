@@ -194,10 +194,10 @@ Paramètres:
 | 26 | Positionnement dans la rame | Correspondances | Public |
 | 27 | Toilettes publiques RATP | Équipements | Public |
 | — | Fontaines à eau réseau RATP | Équipements | Public (CSV) |
-| — | **Données synthétiques d'affluence** | **Affluence** | **Généré** |
+| — | **histo-validations-reseau-ferre 2023** | **Affluence** | **Public IDFM** |
 | — | **Données synthétiques climatisation** | **Confort thermique** | **Généré** |
 
-> **Note affluence :** Le dataset SNCF de comptages voyageurs est restreint aux participants enregistrés au hackathon. En remplacement, l'affluence est simulée via un modèle synthétique basé sur des patterns horaires connus (voir section 5). En production, ce module se branche directement sur les données de validation IDFM (maille horaire).
+> **Note affluence :** Données réelles IDFM 2023 (S1+S2). Distribution horaire des validations par station sur 761 stations du réseau ferré RATP (métro + RER). Pour les stations non couvertes (Transilien, Grand Paris Express), un modèle ML prédit le score à partir de l'heure et du jour de la semaine. Voir section 5 pour le détail.
 
 > **Note correspondance :** Le dataset Métro-connexion (n°19) est un site collaboratif HTML, pas un dataset exploitable. La dimension correspondance est extraite directement de la réponse de l'**API IDFM Calculateur générique v2 (Navitia)** — chaque itinéraire retourne des sections de type `transfer` contenant la durée et la distance de marche entre deux lignes. Aucun dataset supplémentaire n'est nécessaire.
 
@@ -242,55 +242,47 @@ score = (affluence      × 0.35)
 4 dimensions retenues — la qualité de l'air a été retirée faute de données souterraines fiables.
 Chaque dimension est normalisée sur 0–10 avant application des poids.
 
-### Modèle ML d'affluence (RandomForest)
+### Affluence — données réelles IDFM 2023
 
-#### Pourquoi un modèle ML ?
+#### Source primaire : lookup horaire réel (`data/affluence_horaire.json`)
 
-L'approche initiale utilisait une table de règles fixe dans `affluence.json` :
+Pour chaque station reconnue, on utilise directement les validations réelles 2023 :
 
+- **761 stations** du réseau ferré RATP (métro + RER)
+- **Distribution horaire** par tranche de 60 min (0h–23h)
+- **5 types de jours** : `JOHV` (lun-ven hors vacances), `SAHV` (samedi), `DIJFP` (dim/férié), + variantes vacances scolaires
+- `pourc_validations` = % des validations journalières dans ce créneau
+
+**Formule de score :**
 ```
-7h–9h   → score 1/10  (pointe matin)
-9h–16h  → score 6/10  (journée)
-16h–19h → score 1/10  (pointe soir)
-22h–7h  → score 10/10 (nuit)
+score = max(0, 10 × (1 - pct / p97))    où p97 = 12.51%
 ```
+Plus le % est élevé (station bondée), plus le score est bas.
 
-Problème : à 8h59 le score est 1, à 9h00 il saute à 6 d'un coup. Et semaine/week-end donnaient le même résultat.
-
-Le modèle ML résout les deux : **transitions lisses** et **distinction semaine/week-end**.
-
-#### Ce qu'apprend le modèle
-
-Un **RandomForestRegressor (scikit-learn)** entraîné à partir de ces 4 informations :
-
-| Feature | Exemple | Rôle |
-|---|---|---|
-| `heure` | 8 | Principal prédicteur (pointe vs creux) |
-| `jour_semaine` | 0 = lundi | Distingue les jours de la semaine |
-| `is_weekend` | 0 ou 1 | Le week-end, les heures de pointe sont moins intenses |
-| `poids_station` | 1–3 | Châtelet (3) est plus chargé qu'une station secondaire (1) |
-
-**Entraînement :** 12 600 exemples générés depuis les patterns connus + bruit aléatoire, pour forcer le modèle à apprendre une courbe lisse plutôt qu'un tableau.
-
-#### Prédictions types
-
+**Exemples réels (JOHV = lundi) :**
 ```
-Nuit (2h, lundi, poids 1)          → score=9.85  niveau=VERY_LOW
-Pointe matin (8h, lundi, poids 1)  → score=1.08  niveau=VERY_HIGH
-Châtelet à 8h (poids 3)            → score=0.62  niveau=VERY_HIGH
-Week-end 8h (samedi, poids 1)      → score=1.47  niveau=VERY_HIGH  ← moins sévère qu'un lundi
-Milieu de journée (14h, lundi)     → score=5.98  niveau=MEDIUM
+Châtelet       8h  →  3.4%  → score 7.3  MEDIUM    (Châtelet est surtout une station de soirée)
+Châtelet      18h  → 12.9%  → score 0.0  VERY_HIGH (pic réel du soir)
+Gare du Nord   8h  → 12.1%  → score 0.3  VERY_HIGH (hub de pendulaires, pic matin)
+Bir-Hakeim  dimanche 2h → 0.8% → score 10.0 VERY_LOW
 ```
 
-**Performances (cross-validation 5 folds) :** MAE ≈ 1.39/10
+Le champ `source` dans la réponse indique `"reel"` quand les données réelles sont utilisées.
 
-#### Ce qui n'a pas changé
+#### Fallback : modèle ML (stations non reconnues)
 
-Le format de sortie est identique (`niveau`, `label`, `score`). Le modèle est un remplacement interne de `_score_affluence()` — `api.py`, les tests et le reste de l'enricher n'ont pas bougé.
+Pour les stations absentes de l'index (Transilien SNCF, Grand Paris Express, noms non matchés), un **RandomForestRegressor** prédit le score à partir de l'heure et du jour de la semaine uniquement. C'est une prédiction générique — pas aléatoire, mais sans nuance station par station.
 
-Pour réentraîner : `python scripts/train_affluence.py`
+| Feature | Rôle |
+|---|---|
+| `heure` | Principal prédicteur (pointe vs creux) |
+| `jour_semaine` | Distingue semaine / samedi / dimanche |
+| `is_weekend` | Le week-end, la pointe est moins intense |
+| `poids_station` | Grandes gares vs stations secondaires |
 
-**En production**, les features seront alimentées par les vraies données de validation IDFM (maille horaire) — le pipeline reste intact, seules les données d'entraînement changent.
+Le champ `source` vaut `"ml"` dans ce cas.
+
+Pour réentraîner le modèle : `python scripts/train_affluence.py`
 
 ### Climatisation — dataset synthétique
 
@@ -597,7 +589,8 @@ Si le système redistribue 10% des voyageurs aux heures de pointe vers des alter
 | Fontaines à eau RATP | 81 | 81 | M1–14 + RER A (15 lignes) |
 | Toilettes RATP | 48 | 41 | M1, 5, 6, 7, 10, 12, 13, 14 + RER A, B (10 lignes) |
 | Climatisation | 30 lignes | — | M1–14 + RER A–E + Transilien H/J/K/L/N/P/R + T3a/b |
-| Affluence (synthétique) | 9 créneaux horaires | 20 stations pondérées | Toutes lignes |
+| Stations aériennes (OSM) | 30 | 30 | M2, M5, M6, M8, M11, M13, Orlyval |
+| **Affluence réelle IDFM 2023** | **84 000+ lignes** | **761 stations** | **Réseau ferré RATP (métro + RER)** |
 
 ### Répartition climatisation réseau RATP/SNCF
 
