@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 sys.stdout.reconfigure(encoding="utf-8")
 
 from enricher import enrich
+from historique import log_trajet
 
 load_dotenv()
 
@@ -158,6 +159,16 @@ def post_itineraries(
         key = _charge_key(dep_id, arr_id, enrichi["lignes"], req.datetime)
         enrichi = _apply_charge(enrichi, _get_charge(key))
         itineraires.append(enrichi)
+
+        # Alimente l'historique d'apprentissage uniquement avec des trajets
+        # réellement observés (jamais une prédiction ML) pour permettre de
+        # ré-entraîner le modèle de confort. Best-effort : ne doit jamais
+        # casser la réponse API.
+        if enrichi.get("donnee_temps_reel"):
+            try:
+                log_trajet(req.depart, req.arrivee, req.datetime, enrichi)
+            except Exception:
+                pass
 
     if accessible or peu_de_monde or climatise:
         itineraires = [
