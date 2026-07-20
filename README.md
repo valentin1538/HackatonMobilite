@@ -23,6 +23,7 @@ Un score de confort global est ensuite calculé pour comparer les itinéraires e
 ## Structure du dépôt
 
 - [docs/hackathon_mobilites_defi4.md](docs/hackathon_mobilites_defi4.md) : contexte détaillé du projet et logique métier ;
+- [docs/guide_utilisateur.md](docs/guide_utilisateur.md) : guide d'utilisation de l'API (endpoints, filtres, prédiction ML) ;
 - [src/enricher.py](src/enricher.py) : logique d'enrichissement des itinéraires et calcul du score de confort ;
 - [src/test_api.py](src/test_api.py) : test d'appel à l'API IDFM et extraction des données utiles ;
 - [data](data) : jeux de données locaux utilisés pour le confort et l'équipement.
