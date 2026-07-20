@@ -1,4 +1,6 @@
 import unittest
+from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from src.enricher import enrich
 
@@ -44,6 +46,51 @@ class BusinessIntegrationTests(unittest.TestCase):
         self.assertIsInstance(result["business_summary"]["alertes"], list)
         self.assertIsInstance(result["business_summary"]["points_forts"], list)
         self.assertGreaterEqual(result["score_confort"], 0)
+
+    @patch("src.enricher._load_confort_model", return_value=None)
+    def test_trajet_futur_sans_modele_reste_sur_les_regles(self, mock_load):
+        journey = {
+            "duration": 1200,
+            "nb_transfers": 0,
+            "sections": [
+                {
+                    "type": "public_transport",
+                    "display_informations": {"label": "Ligne 1"},
+                    "stop_date_times": [
+                        {"stop_point": {"name": "La Défense"}, "equipment_availability": {}}
+                    ],
+                },
+            ],
+            "disruptions": [],
+        }
+        demain = (datetime.now() + timedelta(days=1)).strftime("%Y%m%dT160000")
+
+        result = enrich(journey, demain)
+
+        self.assertFalse(result["donnee_temps_reel"])
+        self.assertEqual(result["score_confort_source"], "regles")
+
+    def test_trajet_aujourd_hui_est_marque_temps_reel(self):
+        journey = {
+            "duration": 1200,
+            "nb_transfers": 0,
+            "sections": [
+                {
+                    "type": "public_transport",
+                    "display_informations": {"label": "Ligne 1"},
+                    "stop_date_times": [
+                        {"stop_point": {"name": "La Défense"}, "equipment_availability": {}}
+                    ],
+                },
+            ],
+            "disruptions": [],
+        }
+        aujourd_hui = datetime.now().strftime("%Y%m%dT083000")
+
+        result = enrich(journey, aujourd_hui)
+
+        self.assertTrue(result["donnee_temps_reel"])
+        self.assertEqual(result["score_confort_source"], "regles")
 
 
 if __name__ == "__main__":
