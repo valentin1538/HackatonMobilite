@@ -2,14 +2,17 @@ import sys
 import os
 import time
 import requests
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from enricher import enrich
+
+from enricher import enrich, _norm_station, _load_affluence_idx
 from historique import log_trajet
 
 load_dotenv()
@@ -93,6 +96,7 @@ class ItineraryRequest(BaseModel):
     depart: str
     arrivee: str
     datetime: str  # format YYYYMMDDThhmmss, ex: "20260625T083000"
+    datetime_represents: str = "departure"  # "departure" | "arrival"
 
 
 class SelectRequest(BaseModel):
@@ -142,12 +146,13 @@ def post_itineraries(
         f"{BASE_URL}/journeys",
         headers=headers,
         params={
-            "from":              dep_id,
-            "to":                arr_id,
-            "datetime":          req.datetime,
-            "data_freshness":    "realtime",
-            "equipment_details": "true",
-            "count":             3,
+            "from":                 dep_id,
+            "to":                   arr_id,
+            "datetime":             req.datetime,
+            "datetime_represents":  req.datetime_represents,
+            "data_freshness":       "realtime",
+            "equipment_details":    "true",
+            "count":                3,
         },
     )
     r.raise_for_status()
@@ -192,3 +197,42 @@ def select_itinerary(req: SelectRequest):
     count, _ = _CHARGE.get(key, (0, 0.0))
     _CHARGE[key] = (count + 1, time.time())
     return {"key": key, "utilisateurs_actifs": count + 1}
+
+
+# ─── Autocomplétion stations ─────────────────────────────────────────────────
+
+@app.get("/stations")
+def search_stations(q: str = Query("", description="Recherche de station (min 2 chars)")):
+    if len(q.strip()) < 2:
+        return {"stations": []}
+
+    idx = _load_affluence_idx()
+    if not idx:
+        return {"stations": []}
+
+    q_norm = _norm_station(q)
+    canonical_keys = list(idx.get("stations", {}).keys())
+    alias_keys     = list(idx.get("aliases",  {}).keys())
+    all_keys       = list(set(canonical_keys + alias_keys))
+
+    # Prefix matches first, then other substring matches
+    prefix = sorted(k for k in all_keys if k.startswith(q_norm))
+    middle = sorted(k for k in all_keys if q_norm in k and not k.startswith(q_norm))
+
+    results, seen = [], set()
+    for k in prefix + middle:
+        display = k.title()
+        if display not in seen:
+            seen.add(display)
+            results.append(display)
+        if len(results) >= 12:
+            break
+
+    return {"stations": results}
+
+
+# ─── Frontend statique ────────────────────────────────────────────────────────
+
+_STATIC_DIR = Path(__file__).parent.parent / "static"
+if _STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(_STATIC_DIR), html=True), name="static")
