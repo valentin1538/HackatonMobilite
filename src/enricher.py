@@ -361,6 +361,53 @@ def _score_equipements(station_names: list, fontaines_idx: dict, sanitaires_idx:
     return {"toilettes": toilettes, "fontaines": fontaines, "score": score}
 
 
+def _build_sections_resume(sections: list) -> list:
+    """Résumé des étapes du trajet pour le frontend (walk / ride / transfer)."""
+    resume = []
+    for s in sections:
+        stype = s.get("type")
+        if stype not in ("public_transport", "street_network", "transfer"):
+            continue
+        duration_min = max(1, round(s.get("duration", 0) / 60))
+        from_place   = s.get("from") or {}
+        to_place     = s.get("to")   or {}
+        from_name    = from_place.get("name", "")
+        to_name      = to_place.get("name", "")
+
+        if stype == "street_network":
+            resume.append({
+                "kind": "walk",
+                "from": from_name,
+                "to":   to_name,
+                "duration_min": duration_min,
+            })
+
+        elif stype == "public_transport":
+            ligne = (s.get("display_informations") or {}).get("label", "?")
+            sdts  = s.get("stop_date_times") or []
+            if not from_name and sdts:
+                from_name = (sdts[0].get("stop_point") or {}).get("name", "")
+            if not to_name and sdts:
+                to_name   = (sdts[-1].get("stop_point") or {}).get("name", "")
+            resume.append({
+                "kind":  "ride",
+                "ligne": ligne,
+                "from":  from_name,
+                "to":    to_name,
+                "duration_min": duration_min,
+            })
+
+        elif stype == "transfer":
+            resume.append({
+                "kind": "transfer",
+                "from": from_name,
+                "to":   to_name,
+                "duration_min": duration_min,
+            })
+
+    return resume
+
+
 def _build_business_summary(dimensions: dict, score_confort: float) -> dict:
     alertes = []
     points_forts = []
@@ -476,9 +523,10 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     business_summary = _build_business_summary(dimensions, score_confort)
 
     return {
-        "duree_min":        journey.get("duration", 0) // 60,
+        "duree_min":          journey.get("duration", 0) // 60,
         "nb_correspondances": journey.get("nb_transfers", 0),
-        "lignes":           lignes,
+        "lignes":             lignes,
+        "sections_resume":    _build_sections_resume(sections),
         "perturbations": [
             {
                 "severite": d.get("severity", {}).get("name", "?"),
