@@ -7,6 +7,9 @@ import requests as _requests
 from pathlib import Path
 from datetime import datetime
 
+sys.path.insert(0, str(Path(__file__).parent))
+from historique import MIN_SAMPLES_CONFORT_MODEL
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except AttributeError:
@@ -18,6 +21,7 @@ MODEL_DIR = Path(__file__).parent.parent / "models"
 _DATASETS = None
 _MODEL    = None   # chargé une seule fois (lazy)
 _AFFLUENCE_IDX = None  # index horaire réel (lazy)
+_CONFORT_MODEL = None  # modèle global de confort, chargé une seule fois (lazy)
 
 # Coordonnées centre Paris pour l'API météo (lat, lon)
 _PARIS_LAT = 48.8566
@@ -66,6 +70,17 @@ def _load_model():
     return _MODEL
 
 
+def _load_confort_model():
+    global _CONFORT_MODEL
+    if _CONFORT_MODEL is not None:
+        return _CONFORT_MODEL
+    model_path = MODEL_DIR / "confort_model.pkl"
+    if model_path.exists():
+        with open(model_path, "rb") as f:
+            _CONFORT_MODEL = pickle.load(f)
+    return _CONFORT_MODEL
+
+
 def _load_affluence_idx():
     global _AFFLUENCE_IDX
     if _AFFLUENCE_IDX is not None:
@@ -93,9 +108,42 @@ _DOW_TO_CAT = {
 }
 
 
+def _is_future(departure_dt: str) -> bool:
+    """Vrai si la date demandée est strictement dans le futur (après aujourd'hui).
+
+    Sert à distinguer un trajet observé en temps réel (aujourd'hui ou passé) d'un
+    trajet futur, pour lequel météo/accessibilité ne peuvent pas s'appuyer
+    sur des données live et doivent être estimées.
+    """
+    try:
+        cible = datetime.strptime(departure_dt[:8], "%Y%m%d").date()
+    except (ValueError, IndexError):
+        return False
+    return cible > datetime.now().date()
+
+
 # ─── Météo (Open-Meteo, sans clé API) ──────────────────────────────────────
 
-def _fetch_meteo() -> dict:
+def _fetch_meteo(departure_dt: str) -> dict:
+    try:
+        cible = datetime.strptime(departure_dt[:8], "%Y%m%d").date()
+        heure = int(departure_dt[9:11])
+    except (ValueError, IndexError):
+        cible = datetime.now().date()
+        heure = datetime.now().hour
+
+    aujourd_hui = datetime.now().date()
+    delta_days = (cible - aujourd_hui).days
+
+    if delta_days == 0:
+        return _fetch_meteo_actuelle()
+    if 0 < delta_days <= 16:
+        return _fetch_meteo_prevision(cible, heure, delta_days)
+    # Date passée ou trop lointaine (> 16 jours) : pas de prévision fiable
+    return {"temperature": None, "precipitation": 0, "weathercode": 0}
+
+
+def _fetch_meteo_actuelle() -> dict:
     try:
         r = _requests.get(
             "https://api.open-meteo.com/v1/forecast",
@@ -114,6 +162,33 @@ def _fetch_meteo() -> dict:
             "temperature":   c.get("temperature_2m"),
             "precipitation": c.get("precipitation", 0),
             "weathercode":   c.get("weathercode", 0),
+        }
+    except Exception:
+        return {"temperature": None, "precipitation": 0, "weathercode": 0}
+
+
+def _fetch_meteo_prevision(cible, heure: int, delta_days: int) -> dict:
+    """Prévision horaire Open-Meteo pour une date future (jusqu'à 16 jours)."""
+    try:
+        r = _requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude":            _PARIS_LAT,
+                "longitude":           _PARIS_LON,
+                "hourly":              "temperature_2m,precipitation,weathercode",
+                "wind_speed_unit":     "ms",
+                "forecast_days":       delta_days + 1,
+            },
+            timeout=5,
+        )
+        r.raise_for_status()
+        h = r.json().get("hourly", {})
+        cible_str = f"{cible.isoformat()}T{heure:02d}:00"
+        idx = h.get("time", []).index(cible_str)
+        return {
+            "temperature":   h["temperature_2m"][idx],
+            "precipitation": h.get("precipitation", [])[idx],
+            "weathercode":   h.get("weathercode", [])[idx],
         }
     except Exception:
         return {"temperature": None, "precipitation": 0, "weathercode": 0}
@@ -496,7 +571,7 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     acc   = _score_accessibilite(sections)
     corr  = _score_correspondances(sections)
     equip = _score_equipements(station_names, fontaines_idx, sanitaires_idx)
-    meteo_raw = _fetch_meteo()
+    meteo_raw = _fetch_meteo(departure_dt)
     meteo = _score_meteo(meteo_raw, station_names, aeriennes_idx)
 
     score_confort = round(
@@ -510,6 +585,34 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     # Ajustement météo : -1 pt si pluie sur aérien, -0.5 si canicule
     if meteo["alertes"]:
         score_confort = round(max(0.0, score_confort - (meteo.get("score", 10) < 10) * 1.0), 1)
+
+    # Pour un trajet futur (jour calendaire différent d'aujourd'hui), aucune donnée
+    # temps réel n'est disponible (météo = prévision, accessibilité = défaut neutre).
+    # Si un modèle de confort a été entraîné sur suffisamment de trajets réels
+    # observés, on l'utilise pour affiner la prédiction ; sinon on reste sur la
+    # formule de règles ci-dessus, qui sert alors de filet de sécurité.
+    donnee_temps_reel = not _is_future(departure_dt)
+    score_confort_source = "regles"
+
+    if not donnee_temps_reel:
+        confort_bundle = _load_confort_model()
+        if confort_bundle is not None and confort_bundle["meta"]["n_samples"] >= MIN_SAMPLES_CONFORT_MODEL:
+            is_weekend = 1 if jour_semaine >= 5 else 0
+            temp = meteo_raw.get("temperature")
+            features = [[
+                heure,
+                jour_semaine,
+                is_weekend,
+                aff["score"],
+                clim["score"],
+                equip["score"],
+                corr["nb"],
+                temp if temp is not None else 15.0,
+                meteo_raw.get("precipitation") or 0.0,
+            ]]
+            pred = float(confort_bundle["model"].predict(features)[0])
+            score_confort = round(min(10.0, max(0.0, pred)), 1)
+            score_confort_source = "ml_predit"
 
     dimensions = {
         "affluence":      aff,
@@ -536,6 +639,8 @@ def enrich(journey: dict, departure_dt: str) -> dict:
         ],
         "dimensions": dimensions,
         "score_confort": score_confort,
+        "score_confort_source": score_confort_source,
+        "donnee_temps_reel": donnee_temps_reel,
         "recommandation": business_summary["recommandation"],
         "business_summary": business_summary,
     }
