@@ -77,8 +77,12 @@ def afficher_itineraire(idx: int, result: dict):
     d = result["dimensions"]
     lignes_str = " → ".join(result["lignes"]) or "direct"
 
+    horaires = ""
+    if result.get("heure_depart") and result.get("heure_arrivee"):
+        horaires = f"   {result['heure_depart']} → {result['heure_arrivee']}"
+
     print(f"{'━'*55}")
-    print(f"Option {idx+1} — {lignes_str:<20}  {result['duree_min']} min")
+    print(f"Option {idx+1} — {lignes_str:<20}  {result['duree_min']} min{horaires}")
     print(
         f"  {ICONES_AFFLUENCE.get(d['affluence']['niveau'], '👥')} {d['affluence']['label']:<22}"
         f"  {ICONES_CLIM.get(d['climatisation']['status'], '🌡️?')} {d['climatisation']['label']:<28}"
