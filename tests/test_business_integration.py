@@ -85,9 +85,9 @@ class BusinessIntegrationTests(unittest.TestCase):
             ],
             "disruptions": [],
         }
-        aujourd_hui = datetime.now().strftime("%Y%m%dT083000")
+        maintenant = datetime.now().strftime("%Y%m%dT%H%M%S")
 
-        result = enrich(journey, aujourd_hui)
+        result = enrich(journey, maintenant)
 
         self.assertTrue(result["donnee_temps_reel"])
         self.assertEqual(result["score_confort_source"], "regles")

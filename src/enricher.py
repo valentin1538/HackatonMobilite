@@ -108,38 +108,43 @@ _DOW_TO_CAT = {
 }
 
 
-def _is_future(departure_dt: str) -> bool:
-    """Vrai si la date demandée est strictement dans le futur (après aujourd'hui).
+# Au-delà de cet écart avec l'instant présent, un trajet n'est plus considéré
+# comme "temps réel" : la météo/l'accessibilité capturées maintenant ne sont
+# plus une estimation fiable de l'état au moment du trajet.
+SEUIL_TEMPS_REEL_HEURES = 1.0
 
-    Sert à distinguer un trajet observé en temps réel (aujourd'hui ou passé) d'un
-    trajet futur, pour lequel météo/accessibilité ne peuvent pas s'appuyer
-    sur des données live et doivent être estimées.
+
+def _is_future(departure_dt: str) -> bool:
+    """Vrai si l'heure demandée est à plus de SEUIL_TEMPS_REEL_HEURES de maintenant.
+
+    Basé sur l'écart réel en heures, pas seulement le jour calendaire : "aujourd'hui
+    dans 6h" doit être traité comme un trajet futur (météo en prévision, éligible
+    au modèle ML), pas comme une observation temps réel. Un trajet dans le passé
+    (écart négatif) reste considéré comme non-futur.
     """
     try:
-        cible = datetime.strptime(departure_dt[:8], "%Y%m%d").date()
-    except (ValueError, IndexError):
+        cible = datetime.strptime(departure_dt, "%Y%m%dT%H%M%S")
+    except ValueError:
         return False
-    return cible > datetime.now().date()
+    ecart_heures = (cible - datetime.now()).total_seconds() / 3600
+    return ecart_heures > SEUIL_TEMPS_REEL_HEURES
 
 
 # ─── Météo (Open-Meteo, sans clé API) ──────────────────────────────────────
 
 def _fetch_meteo(departure_dt: str) -> dict:
     try:
-        cible = datetime.strptime(departure_dt[:8], "%Y%m%d").date()
-        heure = int(departure_dt[9:11])
-    except (ValueError, IndexError):
-        cible = datetime.now().date()
-        heure = datetime.now().hour
+        cible = datetime.strptime(departure_dt, "%Y%m%dT%H%M%S")
+    except ValueError:
+        cible = datetime.now()
 
-    aujourd_hui = datetime.now().date()
-    delta_days = (cible - aujourd_hui).days
-
-    if delta_days == 0:
+    if not _is_future(departure_dt):
         return _fetch_meteo_actuelle()
-    if 0 < delta_days <= 16:
-        return _fetch_meteo_prevision(cible, heure, delta_days)
-    # Date passée ou trop lointaine (> 16 jours) : pas de prévision fiable
+
+    delta_days = (cible.date() - datetime.now().date()).days
+    if 0 <= delta_days <= 16:
+        return _fetch_meteo_prevision(cible.date(), cible.hour, delta_days)
+    # Trop lointain (> 16 jours) : pas de prévision fiable
     return {"temperature": None, "precipitation": 0, "weathercode": 0}
 
 
@@ -650,75 +655,3 @@ def enrich_journeys(journeys: list, departure_dt: str) -> list:
     """Enrichit une liste d'itinéraires avec la logique métier de confort."""
     return [enrich(journey, departure_dt) for journey in journeys]
 
-
-# ─── Demo ────────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import os
-    import requests
-    from dotenv import load_dotenv
-
-    load_dotenv()
-    API_KEY  = os.getenv("IDFM_API_KEY", "")
-    BASE_URL = "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia"
-    HEADERS  = {"apikey": API_KEY}
-
-    if not API_KEY:
-        raise ValueError("IDFM_API_KEY manquante. Vérifie ton fichier .env.")
-
-    DEPART  = "Vincennes"
-    ARRIVEE = "La Défense"
-    DT      = datetime.now().strftime("%Y%m%dT083000")
-
-    def _get_id(query):
-        r = requests.get(f"{BASE_URL}/places", headers=HEADERS,
-                         params={"q": query, "type[]": "stop_area", "count": 1})
-        r.raise_for_status()
-        places = r.json().get("places", [])
-        return places[0]["id"] if places else None
-
-    dep_id = _get_id(DEPART)
-    arr_id = _get_id(ARRIVEE)
-    if not dep_id or not arr_id:
-        print("Station introuvable.")
-        raise SystemExit(1)
-
-    r = requests.get(f"{BASE_URL}/journeys", headers=HEADERS,
-                     params={"from": dep_id, "to": arr_id, "datetime": DT,
-                             "data_freshness": "realtime", "equipment_details": "true", "count": 3})
-    r.raise_for_status()
-    journeys = r.json().get("journeys", [])
-
-    print(f"Recherche : {DEPART} → {ARRIVEE}  |  {len(journeys)} itinéraire(s)\n")
-
-    ICONES = {
-        "VERY_HIGH": "👥👥", "HIGH": "👥", "MEDIUM": "🚶", "LOW": "✅", "VERY_LOW": "🌙",
-    }
-    CLIM_ICONE = {"total": "🌡️✅", "partiel": "🌡️~", "aucune": "🌡️❌", "inconnu": "🌡️?"}
-
-    for idx, journey in enumerate(journeys):
-        result = enrich(journey, DT)
-        d = result["dimensions"]
-        lignes_str = " → ".join(result["lignes"]) or "direct"
-
-        print(f"{'━'*55}")
-        print(f"Option {idx+1} — {lignes_str:<20}  {result['duree_min']} min")
-        print(
-            f"  {ICONES.get(d['affluence']['niveau'], '👥')} {d['affluence']['label']:<22}"
-            f"  {CLIM_ICONE.get(d['climatisation']['status'], '🌡️?')} {d['climatisation']['label']:<28}"
-        )
-        print(f"  🧭 Recommandation : {result['business_summary']['recommandation']}")
-        if d["accessibilite"]["pannes"]:
-            print(f"  ⚠️  Ascenseur en panne : {', '.join(p['station'] for p in d['accessibilite']['pannes'])}")
-        else:
-            print(f"  ✅ Accessible")
-        print(
-            f"  🚻 Toilettes : {'oui' if d['equipements']['toilettes'] else 'non':<6}"
-            f"  🚰 Fontaines : {'oui' if d['equipements']['fontaines'] else 'non'}"
-        )
-        if result["perturbations"]:
-            for p in result["perturbations"]:
-                print(f"  ⚠️  [{p['severite']}] {p['message']}")
-        print(f"  ➜  Score confort : {result['score_confort']}/10")
-
-    print(f"{'━'*55}")

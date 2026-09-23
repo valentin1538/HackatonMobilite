@@ -25,7 +25,7 @@ Un score de confort global est ensuite calculé pour comparer les itinéraires e
 - [src/api.py](src/api.py) : API FastAPI (endpoints itinéraires, stations) et service du frontend ;
 - [src/enricher.py](src/enricher.py) : logique d'enrichissement des itinéraires et calcul du score de confort ;
 - [src/historique.py](src/historique.py) : journalisation des trajets et modèle de prédiction du confort ;
-- [src/test_api.py](src/test_api.py) : test d'appel à l'API IDFM et extraction des données utiles ;
+- [src/demo.py](src/demo.py) : démo en ligne de commande (appel IDFM + affichage enrichi) ;
 - [static](static) : frontend (HTML/CSS/JS sans framework) servi par l'API ;
 - [data](data) : jeux de données locaux utilisés pour le confort et l'équipement.
 
@@ -49,19 +49,21 @@ Le frontend est servi directement par l'API : une seule commande suffit pour
 avoir l'application complète.
 
 ```bash
-uvicorn api:app --reload --app-dir src
+python -m uvicorn api:app --reload --app-dir src
 ```
 
 - application web : http://127.0.0.1:8000
 - documentation interactive de l'API : http://127.0.0.1:8000/docs
 
 L'option `--app-dir src` est nécessaire : les modules de `src/` s'importent
-entre eux à plat (`from enricher import ...`).
+entre eux à plat (`from enricher import ...`). Le préfixe `python -m` évite
+l'erreur `uvicorn n'est pas reconnu` quand le dossier `Scripts` de Python
+n'est pas dans le PATH.
 
 Pour changer de port :
 
 ```bash
-uvicorn api:app --reload --app-dir src --port 8080
+python -m uvicorn api:app --reload --app-dir src --port 8080
 ```
 
 ## Scripts en ligne de commande
@@ -69,13 +71,15 @@ uvicorn api:app --reload --app-dir src --port 8080
 Vérifier la connexion à l'API IDFM et afficher des itinéraires enrichis :
 
 ```bash
-python -m src.test_api
+python src/demo.py
 ```
 
-Lancer la démo d'enrichissement des itinéraires :
+Le trajet et l'heure sont paramétrables, et `--raw` ajoute le JSON brut de
+l'API pour le debug :
 
 ```bash
-python src/enricher.py
+python src/demo.py --depart "Nation" --arrivee "Saint-Lazare" --heure 18:30
+python src/demo.py --raw
 ```
 
 Lancer les tests :
