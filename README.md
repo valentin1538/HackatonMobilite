@@ -1,89 +1,142 @@
-# HackatonMobilite
+# HackatonMobilite — confort+
 
-Projet Python développé dans le cadre du défi 4 du Hackathon Mobilités 2025 : améliorer l'accessibilité et le confort dans les services de mobilité.
+Projet Python développé dans le cadre du défi 4 du Hackathon Mobilités 2025 : améliorer l'accessibilité et le confort dans les services de mobilité en Île-de-France.
 
 ## Objectif
 
-Le projet propose un moteur de recommandation d'itinéraires enrichis qui va au-delà du simple temps de trajet. Pour chaque option, il affiche des informations de confort utiles à l'utilisateur :
+**confort+** est un moteur de recommandation d'itinéraires enrichis qui va au-delà du simple temps de trajet. Pour chaque option proposée par l'API IDFM/Navitia, il calcule un **score de confort global sur 10** en agrégeant six dimensions :
 
-- affluence estimée à l'heure choisie ;
-- niveau de climatisation sur les lignes empruntées ;
-- accessibilité réelle via les informations d'équipement de l'API IDFM ;
-- présence de toilettes et de fontaines à eau ;
-- qualité des correspondances.
+| Dimension | Poids | Source |
+|---|---|---|
+| **Affluence** | 35 % | Données IDFM 2023 (profils horaires réels) + modèle ML (fallback) |
+| **Accessibilité** | 30 % | Statut temps réel des ascenseurs (API IDFM `equipment_details`) |
+| **Correspondances** | 20 % | Nombre et durée des transferts |
+| **Équipements** | 15 % | Toilettes et fontaines à eau (datasets RATP) |
+| Climatisation | info | Statut par ligne (total / partiel / aucune) |
+| Météo | info | Température, pluie, canicule via Open-Meteo (temps réel + prévisions J+16) |
 
-Un score de confort global est ensuite calculé pour comparer les itinéraires entre eux.
+Un résumé métier (recommandation, alertes, points forts) est généré pour chaque itinéraire.
 
-## Architecture du projet
+## Architecture
 
-- l'API IDFM/Navitia est utilisée pour récupérer les itinéraires disponibles ;
-- les données locales et synthétiques complètent les informations manquantes ;
-- un enrichissement est appliqué à chaque trajet avant d'afficher un résultat interprétable.
+```
+┌──────────────┐      POST /itineraries       ┌──────────────────┐
+│   Frontend   │ ───────────────────────────▶  │  API FastAPI     │
+│  (static/)   │ ◀─────────────────────────── │  (src/api.py)    │
+│  HTML/JS/CSS │      JSON enrichi            │                  │
+└──────────────┘                               │  ┌────────────┐ │
+       │  GET /stations                        │  │ enricher   │ │──▶ API IDFM/Navitia
+       └──────────────────────────────────▶    │  │ (enrich()) │ │──▶ Open-Meteo
+                                               │  └────────────┘ │
+                                               │  ┌────────────┐ │
+                                               │  │ historique │ │──▶ data/historique_trajets.csv
+                                               │  └────────────┘ │
+                                               └──────────────────┘
+                                                       │
+                                               ┌───────▼────────┐
+                                               │  Modèles ML    │
+                                               │  (models/*.pkl)│
+                                               └────────────────┘
+```
+
+- **API FastAPI** (`src/api.py`) — expose les endpoints REST, applique les filtres confort (accessibilité, affluence, climatisation) et gère la **charge dynamique** (le score d'affluence baisse si trop d'utilisateurs choisissent le même itinéraire).
+- **Enricher** (`src/enricher.py`) — interroge l'API IDFM, croise les données locales (affluence horaire, climatisation, fontaines, sanitaires, stations aériennes) et la météo Open-Meteo pour produire les 6 dimensions du score de confort.
+- **Historique** (`src/historique.py`) — enregistre chaque trajet observé en temps réel dans un CSV pour permettre le ré-entraînement du modèle de confort.
+- **Frontend** (`static/`) — interface web vanilla HTML/JS/CSS avec autocomplétion des stations, sélection de l'heure, filtres confort, 3 vues (Sobre / Carte / Comparatif), et détail par itinéraire.
+
+### Endpoints de l'API
+
+| Méthode | Route | Description |
+|---|---|---|
+| `POST` | `/itineraries` | Recherche d'itinéraires enrichis (filtres `accessible`, `peu_de_monde`, `climatise`) |
+| `POST` | `/itineraries/select` | Signale le choix d'un itinéraire (ajuste le score en temps réel) |
+| `GET` | `/stations?q=...` | Autocomplétion des noms de stations |
+
+### Machine Learning
+
+Deux modèles `RandomForestRegressor` (scikit-learn) sont entraînés :
+
+- **Modèle d'affluence** (`scripts/train_affluence.py`) — prédit le score d'affluence à partir de l'heure, du jour et du type de station. Utilisé en fallback quand les données réelles IDFM manquent.
+- **Modèle de confort** (`scripts/train_confort.py`) — prédit le score de confort global pour les trajets futurs, entraîné sur l'historique des trajets réellement observés. Activé automatiquement dès 50 trajets historiques.
+
+Le script `scripts/seed_historique.py` permet de peupler rapidement l'historique en appelant l'API locale sur plusieurs paires de stations.
 
 ## Structure du dépôt
 
-- [src/api.py](src/api.py) : API FastAPI (endpoints itinéraires, stations) et service du frontend ;
-- [src/enricher.py](src/enricher.py) : logique d'enrichissement des itinéraires et calcul du score de confort ;
-- [src/historique.py](src/historique.py) : journalisation des trajets et modèle de prédiction du confort ;
-- [src/demo.py](src/demo.py) : démo en ligne de commande (appel IDFM + affichage enrichi) ;
-- [static](static) : frontend (HTML/CSS/JS sans framework) servi par l'API ;
-- [data](data) : jeux de données locaux utilisés pour le confort et l'équipement.
-
-## Installation
-
-1. Ajouter votre clé API IDFM dans un fichier `.env` à la racine :
-
-   ```
-   IDFM_API_KEY=votre_cle
-   ```
-
-2. Installer les dépendances :
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Lancer l'application
-
-Le frontend est servi directement par l'API : une seule commande suffit pour
-avoir l'application complète.
-
-```bash
-python -m uvicorn api:app --reload --app-dir src
+```
+├── src/
+│   ├── api.py              # API FastAPI (endpoints, filtres, charge dynamique)
+│   ├── enricher.py          # Enrichissement des itinéraires (6 dimensions, score)
+│   ├── historique.py        # Logging des trajets observés (CSV)
+│   └── test_api.py          # Script de test d'appel à l'API IDFM
+├── static/
+│   ├── index.html           # Frontend web (point d'entrée)
+│   ├── app.js               # Logique UI (autocomplétion, cartes, détails)
+│   └── app.css              # Styles (animations, spinner)
+├── scripts/
+│   ├── train_affluence.py   # Entraînement du modèle d'affluence
+│   ├── train_confort.py     # Entraînement du modèle de confort
+│   └── seed_historique.py   # Peuplement de l'historique de trajets
+├── models/
+│   ├── affluence_model.pkl  # Modèle ML affluence (RandomForest)
+│   └── confort_model.pkl    # Modèle ML confort (RandomForest)
+├── data/
+│   ├── affluence_horaire.json       # Profils d'affluence IDFM 2023
+│   ├── affluence.json               # Créneaux horaires et poids stations
+│   ├── climatisation.json           # Statut climatisation par ligne
+│   ├── fontaines-a-eau-dans-le-reseau-ratp.json
+│   ├── sanitaires-reseau-ratp.json
+│   ├── stations_aeriennes.json      # Stations en plein air (impact météo)
+│   ├── historique_trajets.csv       # Historique des trajets observés
+│   └── IDFM_API.json               # Données brutes API IDFM
+├── notebooks/
+│   └── analyse_affluence_ml.ipynb   # Analyse exploratoire affluence
+├── tests/                           # Tests unitaires (pytest)
+├── requirements.txt
+├── .env.example
+└── .gitignore
 ```
 
-- application web : http://127.0.0.1:8000
-- documentation interactive de l'API : http://127.0.0.1:8000/docs
+## Utilisation rapide
 
-L'option `--app-dir src` est nécessaire : les modules de `src/` s'importent
-entre eux à plat (`from enricher import ...`). Le préfixe `python -m` évite
-l'erreur `uvicorn n'est pas reconnu` quand le dossier `Scripts` de Python
-n'est pas dans le PATH.
+### 1. Clé API
 
-Pour changer de port :
+Copier `.env.example` en `.env` et y coller votre clé API IDFM :
 
-```bash
-python -m uvicorn api:app --reload --app-dir src --port 8080
+```
+IDFM_API_KEY=votre_cle_ici
 ```
 
-## Scripts en ligne de commande
-
-Vérifier la connexion à l'API IDFM et afficher des itinéraires enrichis :
+### 2. Installation
 
 ```bash
-python src/demo.py
+pip install -r requirements.txt
 ```
 
-Le trajet et l'heure sont paramétrables, et `--raw` ajoute le JSON brut de
-l'API pour le debug :
+### 3. Lancer le serveur
 
 ```bash
-python src/demo.py --depart "Nation" --arrivee "Saint-Lazare" --heure 18:30
-python src/demo.py --raw
+cd src
+python -m uvicorn api:app --reload
 ```
 
-Lancer les tests :
+L'interface web est accessible sur [http://localhost:8000](http://localhost:8000).
+
+### 4. (Optionnel) Entraîner les modèles ML
 
 ```bash
-pytest
+# Modèle d'affluence (données synthétiques)
+python scripts/train_affluence.py
+
+# Peupler l'historique de trajets (nécessite le serveur actif + clé API valide)
+python scripts/seed_historique.py
+
+# Modèle de confort (nécessite ≥ 50 trajets dans l'historique)
+python scripts/train_confort.py
+```
+
+### 5. Lancer les tests
+
+```bash
+pytest tests/
 ```
