@@ -199,7 +199,12 @@ def _fetch_meteo_prevision(cible, heure: int, delta_days: int) -> dict:
         return {"temperature": None, "precipitation": 0, "weathercode": 0}
 
 
-def _score_meteo(meteo: dict, station_names: list, aeriennes_idx: dict) -> dict:
+def _score_meteo(
+    meteo: dict,
+    station_names: list,
+    aeriennes_idx: dict,
+    clim_status: str = "inconnu",
+) -> dict:
     temp         = meteo.get("temperature")
     precipitation = meteo.get("precipitation", 0)
     weathercode  = meteo.get("weathercode", 0)
@@ -218,15 +223,26 @@ def _score_meteo(meteo: dict, station_names: list, aeriennes_idx: dict) -> dict:
     elif pluie:
         alertes.append("Pluie (trajet couvert)")
 
-    # Canicule (>= 35°C) → pénalise les lignes sans clim
+    # Canicule (>= 35°C) → le malus dépend de la climatisation du trajet.
+    # Un trajet entièrement climatisé n'est pas pénalisé : c'est précisément
+    # le jour où ce choix doit ressortir face aux lignes non climatisées.
     canicule = temp is not None and temp >= 35
     if canicule:
-        malus += 1.0
-        alertes.append("Canicule : préférez une ligne climatisée")
+        if clim_status == "total":
+            alertes.append("Canicule (trajet climatisé)")
+        elif clim_status == "aucune":
+            malus += 2.0
+            alertes.append("Canicule : trajet non climatisé")
+        elif clim_status == "partiel":
+            malus += 1.0
+            alertes.append("Canicule : trajet partiellement climatisé")
+        else:  # "inconnu"
+            malus += 1.0
+            alertes.append("Canicule : climatisation non renseignée")
 
-    # Chaleur modérée (28-35°C) → signal informatif
+    # Chaleur modérée (28-35°C) → signal informatif, inutile si tout est climatisé
     chaleur = temp is not None and 28 <= temp < 35
-    if chaleur:
+    if chaleur and clim_status != "total":
         alertes.append("Chaleur : vérifiez la climatisation")
 
     score = round(max(0.0, 10.0 - malus), 1)
@@ -237,6 +253,7 @@ def _score_meteo(meteo: dict, station_names: list, aeriennes_idx: dict) -> dict:
         "weathercode":         weathercode,
         "pluie":               pluie,
         "canicule":            canicule,
+        "clim_status":         clim_status,
         "stations_aeriennes":  stations_aeriennes,
         "alertes":             alertes,
         "score":               score,
@@ -577,7 +594,7 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     corr  = _score_correspondances(sections)
     equip = _score_equipements(station_names, fontaines_idx, sanitaires_idx)
     meteo_raw = _fetch_meteo(departure_dt)
-    meteo = _score_meteo(meteo_raw, station_names, aeriennes_idx)
+    meteo = _score_meteo(meteo_raw, station_names, aeriennes_idx, clim["status"])
 
     score_confort = round(
         aff["score"]   * 0.35 +
@@ -587,9 +604,11 @@ def enrich(journey: dict, departure_dt: str) -> dict:
         1,
     )
 
-    # Ajustement météo : -1 pt si pluie sur aérien, -0.5 si canicule
-    if meteo["alertes"]:
-        score_confort = round(max(0.0, score_confort - (meteo.get("score", 10) < 10) * 1.0), 1)
+    # Ajustement météo : proportionnel à l'exposition réelle du trajet (aérien
+    # sous la pluie, absence de climatisation en cas de canicule). Un malus de
+    # 2 pts sur la dimension météo retire 1 pt au score de confort.
+    malus_meteo = 10.0 - meteo["score"]
+    score_confort = round(max(0.0, score_confort - malus_meteo * 0.5), 1)
 
     # Pour un trajet futur (jour calendaire différent d'aujourd'hui), aucune donnée
     # temps réel n'est disponible (météo = prévision, accessibilité = défaut neutre).
