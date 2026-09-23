@@ -195,8 +195,8 @@ function alertMeta(text) {
 function accessibiliteLabel(acc) {
   // "Non renseigné" n'est pas "Stable" : sans donnée IDFM, on ne certifie rien.
   if (acc.statut === 'panne')   return acc.pannes.length + ' panne(s)';
-  if (acc.statut === 'inconnu') return 'Non renseigné';
-  return 'Stable';
+  if (acc.statut === 'inconnu') return 'Non documenté';
+  return acc.nb_checked + ' arrêt(s) documenté(s)';
 }
 
 // Les seuils des trois filtres sont définis côté API (_flags_filtres) et
@@ -327,7 +327,7 @@ function filterReason(cle, all) {
   if (cle === 'access') {
     var statuts = all.map(function(it) { return it.dimensions.accessibilite.statut; });
     if (statuts.length && statuts.every(function(s) { return s === 'inconnu'; })) {
-      return 'accessibilité non renseignée par IDFM sur ce trajet';
+      return 'embarquement en fauteuil non documenté par IDFM à ces arrêts';
     }
     return 'ascenseur en panne ou non vérifié sur tous les itinéraires';
   }

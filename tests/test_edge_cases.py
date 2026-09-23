@@ -12,12 +12,19 @@ _affluence = json.loads((DATA_DIR / "affluence.json").read_text(encoding="utf-8"
 _clim = json.loads((DATA_DIR / "climatisation.json").read_text(encoding="utf-8"))
 
 
-def _journey(lignes=None, stations=None, transfers=None, elevators=None, disruptions=None):
-    """Construit un itinéraire minimal pour les tests."""
+def _journey(lignes=None, stations=None, transfers=None, elevators=None,
+             disruptions=None, wheelchair=True):
+    """Construit un itinéraire minimal pour les tests.
+
+    `wheelchair` pilote `has_wheelchair_boarding` dans stop_point["equipments"],
+    qui est la source d'accessibilité réellement renvoyée par IDFM. `elevators`
+    alimente equipment_availability, conservé pour la détection de panne.
+    """
     lignes = lignes or ["A"]
     stations = stations or ["Gare X"]
     transfers = transfers or []
     elevators = elevators or ["available"] * len(stations)
+    equipements = ["has_wheelchair_boarding"] if wheelchair else []
 
     sections = []
     for i, ligne in enumerate(lignes):
@@ -27,7 +34,7 @@ def _journey(lignes=None, stations=None, transfers=None, elevators=None, disrupt
             "type": "public_transport",
             "display_informations": {"label": ligne},
             "stop_date_times": [{
-                "stop_point": {"name": stop},
+                "stop_point": {"name": stop, "equipments": list(equipements)},
                 "equipment_availability": {"elevator": elev},
             }],
         })
@@ -127,10 +134,17 @@ class TestCorrespondances(unittest.TestCase):
 
 
 class TestAccessibilite(unittest.TestCase):
-    def test_ascenseur_disponible(self):
+    def test_arret_documente_accessible(self):
         result = enrich(_journey(elevators=["available"]), "20260626T083000")
         self.assertTrue(result["dimensions"]["accessibilite"]["ok"])
         self.assertEqual(result["dimensions"]["accessibilite"]["score"], 10)
+
+    def test_arret_non_documente_reste_inconnu(self):
+        """Un ascenseur en service ne documente pas l'embarquement en fauteuil."""
+        result = enrich(_journey(elevators=["available"], wheelchair=False), "20260626T083000")
+        acc = result["dimensions"]["accessibilite"]
+        self.assertEqual(acc["statut"], "inconnu")
+        self.assertFalse(acc["ok"])
 
     def test_ascenseur_en_panne(self):
         result = enrich(_journey(elevators=["unavailable"]), "20260626T083000")
