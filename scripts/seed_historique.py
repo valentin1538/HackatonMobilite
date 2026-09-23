@@ -1,15 +1,17 @@
 """
-Peuple rapidement l'historique de trajets (data/historique_trajets.csv) en
-appelant l'API locale sur plusieurs paires de stations réelles, à l'heure
-actuelle et à quelques heures différentes d'aujourd'hui.
+Peuple l'historique de trajets (data/historique_trajets.csv) en appelant
+l'API locale sur plusieurs paires de stations réelles, à l'heure actuelle.
 
 Prérequis :
     - l'API doit tourner en local : python -m uvicorn api:app --reload
     - IDFM_API_KEY doit être valide (l'API interroge le vrai planificateur IDFM)
 
-Chaque appel peut logger jusqu'à 3 lignes (un par itinéraire proposé), donc
-une vingtaine d'appels suffit généralement pour atteindre les 50 lignes
-nécessaires à l'entraînement de scripts/train_confort.py.
+Un trajet n'est loggé que s'il est demandé à moins d'1h de l'instant présent
+(voir enricher.SEUIL_TEMPS_REEL_HEURES) — ce script ne peut donc pas simuler
+plusieurs heures de la journée en une seule exécution. Chaque appel peut
+logger jusqu'à 3 lignes (un par itinéraire proposé). Pour une vraie diversité
+horaire/météo, relancez ce script à différents moments de la journée/semaine
+plutôt qu'en une seule fois.
 
 Usage :
     python scripts/seed_historique.py
@@ -37,37 +39,33 @@ TRAJETS = [
     ("Bastille", "Châtelet - Les Halles"),
 ]
 
-# Heures à essayer sur la journée en cours (toutes comptent comme "aujourd'hui")
-HEURES = ["08", "12", "17", "20"]
-
 
 def main():
-    aujourd_hui = datetime.now().strftime("%Y%m%d")
     total_itineraires = 0
     total_appels = 0
 
     for depart, arrivee in TRAJETS:
-        for heure in HEURES:
-            dt = f"{aujourd_hui}T{heure}3000"
-            try:
-                r = requests.post(
-                    API_URL,
-                    json={"depart": depart, "arrivee": arrivee, "datetime": dt},
-                    timeout=15,
-                )
-                r.raise_for_status()
-                data = r.json()
-                n = len(data.get("itineraires", []))
-                total_itineraires += n
-                total_appels += 1
-                print(f"  {depart} → {arrivee} à {heure}h : {n} itinéraire(s) loggé(s)")
-            except Exception as e:
-                print(f"  {depart} → {arrivee} à {heure}h : échec ({e})")
+        dt = datetime.now().strftime("%Y%m%dT%H%M%S")
+        try:
+            r = requests.post(
+                API_URL,
+                json={"depart": depart, "arrivee": arrivee, "datetime": dt},
+                timeout=15,
+            )
+            r.raise_for_status()
+            data = r.json()
+            n = len(data.get("itineraires", []))
+            total_itineraires += n
+            total_appels += 1
+            print(f"  {depart} → {arrivee} : {n} itinéraire(s) loggé(s)")
+        except Exception as e:
+            print(f"  {depart} → {arrivee} : échec ({e})")
 
-            time.sleep(0.5)  # ménage l'API IDFM
+        time.sleep(0.5)  # ménage l'API IDFM
 
     print(f"\n{total_appels} appel(s) effectué(s), ~{total_itineraires} ligne(s) ajoutée(s) à l'historique.")
-    print("Lancez maintenant : python scripts/train_confort.py")
+    print("Relancez ce script à d'autres moments pour diversifier les données, puis :")
+    print("  python scripts/train_confort.py")
 
 
 if __name__ == "__main__":

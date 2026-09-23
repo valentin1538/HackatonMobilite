@@ -89,11 +89,14 @@ def afficher_itineraire(idx: int, result: dict):
     for c in d["correspondances"]["details"]:
         print(f"     └─ marche {c['duree_sec']}s ({c['mode']})")
 
-    if d["accessibilite"]["pannes"]:
-        stations_ko = ", ".join(p["station"] for p in d["accessibilite"]["pannes"])
+    acc = d["accessibilite"]
+    if acc["statut"] == "panne":
+        stations_ko = ", ".join(p["station"] for p in acc["pannes"])
         print(f"  ⚠️  Ascenseur en panne : {stations_ko}")
+    elif acc["statut"] == "inconnu":
+        print(f"  ❔ Accessibilité non renseignée ({len(acc['inconnues'])} station(s))")
     else:
-        print(f"  ✅ Accessible")
+        print(f"  ✅ Accessible (vérifié sur {acc['nb_checked']} station(s))")
 
     print(
         f"  🚻 Toilettes : {'oui' if d['equipements']['toilettes'] else 'non':<6}"

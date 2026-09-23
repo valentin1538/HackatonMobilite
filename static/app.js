@@ -180,6 +180,7 @@ function bandFor(score) {
 function alertMeta(text) {
   var t = (text || '').toLowerCase();
   if (/affluence|charg/.test(t))              return { ic: 'users',    col: C.amber   };
+  if (/non renseign/.test(t))                 return { ic: 'accessibility', col: C.mut };
   if (/ascenseur|panne/.test(t))              return { ic: 'alert',    col: C.red     };
   if (/climati|ventil/.test(t))               return { ic: 'wind',     col: '#3f6f8a' };
   if (/équipement|toilette|fontaine/.test(t)) return { ic: 'droplet',  col: '#2f8f7f' };
@@ -191,15 +192,30 @@ function alertMeta(text) {
 
 // ── Filter helpers ────────────────────────────────────────────────────────────
 
+function accessibiliteLabel(acc) {
+  // "Non renseigné" n'est pas "Stable" : sans donnée IDFM, on ne certifie rien.
+  if (acc.statut === 'panne')   return acc.pannes.length + ' panne(s)';
+  if (acc.statut === 'inconnu') return 'Non renseigné';
+  return 'Stable';
+}
+
+// Les seuils des trois filtres sont définis côté API (_flags_filtres) et
+// renvoyés par itinéraire dans `filtres_compatibles`. Le front ne les
+// redéfinit pas : deux implémentations divergeaient silencieusement.
+function compatible(it, cle) {
+  var f = it.filtres_compatibles;
+  return !!(f && f[cle]);
+}
+
 function availableFilters() {
   if (!S.results || !S.results.itineraires.length) {
     return { access: true, crowd: true, air: true };
   }
   var all = S.results.itineraires;
   return {
-    access: all.some(function(it) { return it.dimensions.accessibilite.ok; }),
-    crowd:  all.some(function(it) { return ['LOW', 'VERY_LOW'].indexOf(it.dimensions.affluence.niveau) !== -1; }),
-    air:    all.some(function(it) { return it.dimensions.climatisation.status === 'total' || it.dimensions.climatisation.status === 'partiel'; }),
+    access: all.some(function(it) { return compatible(it, 'accessible'); }),
+    crowd:  all.some(function(it) { return compatible(it, 'peu_de_monde'); }),
+    air:    all.some(function(it) { return compatible(it, 'climatise'); }),
   };
 }
 
@@ -213,10 +229,9 @@ function syncFilters() {
 function filteredItineraires() {
   if (!S.results) return [];
   return S.results.itineraires.filter(function(it) {
-    var d = it.dimensions;
-    if (S.filters.access && !d.accessibilite.ok) return false;
-    if (S.filters.crowd  && ['VERY_HIGH', 'HIGH'].indexOf(d.affluence.niveau) !== -1) return false;
-    if (S.filters.air    && d.climatisation.status !== 'total' && d.climatisation.status !== 'partiel') return false;
+    if (S.filters.access && !compatible(it, 'accessible'))   return false;
+    if (S.filters.crowd  && !compatible(it, 'peu_de_monde')) return false;
+    if (S.filters.air    && !compatible(it, 'climatise'))    return false;
     return true;
   });
 }
@@ -685,7 +700,7 @@ function screenDetail() {
 
   var dims = [
     { label: 'Affluence',       weight: 35,   score: d.affluence.score,       extra: d.affluence.label },
-    { label: 'Accessibilité',   weight: 30,   score: d.accessibilite.score,   extra: d.accessibilite.ok ? 'Stable' : (d.accessibilite.pannes.length + ' panne(s)') },
+    { label: 'Accessibilité',   weight: 30,   score: d.accessibilite.score,   extra: accessibiliteLabel(d.accessibilite) },
     { label: 'Correspondances', weight: 20,   score: d.correspondances.score, extra: d.correspondances.nb === 0 ? 'Direct' : (d.correspondances.nb + ' corresp.') },
     { label: 'Équipements',     weight: 15,   score: d.equipements.score,     extra: [d.equipements.toilettes && 'toilettes', d.equipements.fontaines && 'fontaines'].filter(Boolean).join(', ') || 'aucun' },
     { label: 'Climatisation',   weight: null, score: d.climatisation.score,   extra: d.climatisation.label },
