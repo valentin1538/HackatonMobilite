@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 sys.stdout.reconfigure(encoding="utf-8")
 
 
-from enricher import enrich, _norm_station, _load_affluence_idx
+from enricher import enrich, filtrer_journeys, _norm_station, _load_affluence_idx
 from historique import log_trajet
 
 load_dotenv()
@@ -191,7 +191,7 @@ def post_itineraries(
     journeys = r.json().get("journeys", [])
 
     itineraires = []
-    for j in journeys:
+    for j in filtrer_journeys(journeys):
         enrichi = enrich(j, req.datetime)
         key = _charge_key(dep_id, arr_id, enrichi["lignes"], req.datetime)
         enrichi = _apply_charge(enrichi, _get_charge(key))

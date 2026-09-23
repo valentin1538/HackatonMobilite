@@ -553,6 +553,14 @@ def _score_equipements(station_names: list, fontaines_idx: dict, sanitaires_idx:
     return {"toilettes": toilettes, "fontaines": fontaines, "score": score}
 
 
+def _heure(navitia_dt: str) -> str | None:
+    """Convertit un horodatage Navitia "YYYYMMDDThhmmss" en "hh:mm"."""
+    try:
+        return datetime.strptime(navitia_dt, "%Y%m%dT%H%M%S").strftime("%H:%M")
+    except (ValueError, TypeError):
+        return None
+
+
 def _build_sections_resume(sections: list) -> list:
     """Résumé des étapes du trajet pour le frontend (walk / ride / transfer)."""
     resume = []
@@ -752,6 +760,8 @@ def enrich(journey: dict, departure_dt: str) -> dict:
 
     return {
         "duree_min":          journey.get("duration", 0) // 60,
+        "heure_depart":       _heure(journey.get("departure_date_time")),
+        "heure_arrivee":      _heure(journey.get("arrival_date_time")),
         "nb_correspondances": journey.get("nb_transfers", 0),
         "lignes":             lignes,
         "sections_resume":    _build_sections_resume(sections),
@@ -771,7 +781,28 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     }
 
 
+def _est_uniquement_a_pied(journey: dict) -> bool:
+    """Vrai si l'itinéraire n'emprunte aucun transport en commun."""
+    if "non_pt" in (journey.get("tags") or []):
+        return True
+    return not any(s.get("type") == "public_transport"
+                   for s in journey.get("sections", []))
+
+
+def filtrer_journeys(journeys: list) -> list:
+    """Écarte les itinéraires entièrement à pied dès qu'une alternative existe.
+
+    Navitia propose systématiquement un trajet piéton, qui peut durer près de
+    deux heures là où le métro met treize minutes. Le garder en face d'une
+    option en transport ne rend service à personne. On le conserve en revanche
+    s'il est la seule réponse : sur une courte distance, marcher est une vraie
+    solution.
+    """
+    en_transport = [j for j in journeys if not _est_uniquement_a_pied(j)]
+    return en_transport or journeys
+
+
 def enrich_journeys(journeys: list, departure_dt: str) -> list:
     """Enrichit une liste d'itinéraires avec la logique métier de confort."""
-    return [enrich(journey, departure_dt) for journey in journeys]
+    return [enrich(journey, departure_dt) for journey in filtrer_journeys(journeys)]
 

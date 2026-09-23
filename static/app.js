@@ -151,6 +151,13 @@ function openDatePicker() {
   }
 }
 
+function creneau(it) {
+  // Deux trains d'une meme ligne peuvent ne differer que par l'horaire :
+  // sans lui, les options paraissent identiques a l'ecran.
+  if (!it.heure_depart || !it.heure_arrivee) return '';
+  return it.heure_depart + ' → ' + it.heure_arrivee;
+}
+
 function formatLine(label) {
   if (!label) return '?';
   if (/^[A-E]$/i.test(label.trim())) return 'RER ' + label.toUpperCase();
@@ -512,7 +519,7 @@ function cardA(it, idx) {
       '</div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
         '<span style="font:600 16px \'Libre Franklin\';color:' + C.ink + '">' + esc(title) + '</span>' +
-        '<span style="font:600 13px \'IBM Plex Mono\';color:' + C.mut + '">' + it.duree_min + ' min</span>' +
+        '<span style="font:600 13px \'IBM Plex Mono\';color:' + C.mut + '">' + it.duree_min + ' min' + (creneau(it) ? ' · ' + creneau(it) : '') + '</span>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:11px">' + alts.map(alertPillSmall).join('') + '</div>' +
     '</div>' +
@@ -541,7 +548,7 @@ function cardB(it, idx) {
         '</div>' +
         '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
           '<span style="font:700 17px \'Libre Franklin\';color:' + C.ink + '">' + esc(title) + '</span>' +
-          '<span style="font:600 13px \'IBM Plex Mono\';color:' + C.mut + '">' + it.duree_min + ' min</span>' +
+          '<span style="font:600 13px \'IBM Plex Mono\';color:' + C.mut + '">' + it.duree_min + ' min' + (creneau(it) ? ' · ' + creneau(it) : '') + '</span>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:9px">' + alts.map(alertRow).join('') + '</div>' +
       '</div>' +
@@ -566,7 +573,7 @@ function cardC(it, idx) {
   return '<div onclick="selectIt(' + idx + ')" style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:12px;cursor:pointer;' + rowBg + '">' +
     '<div style="width:92px;flex-shrink:0">' +
       '<div style="display:flex;gap:6px;margin-bottom:7px;flex-wrap:wrap">' + it.lignes.map(lineBadge).join('') + '</div>' +
-      '<div style="font:500 12px \'IBM Plex Mono\';color:' + C.faint + '">' + it.duree_min + ' min</div>' +
+      '<div style="font:500 12px \'IBM Plex Mono\';color:' + C.faint + '">' + it.duree_min + ' min' + (creneau(it) ? '<br>' + creneau(it) : '') + '</div>' +
     '</div>' +
     '<div style="flex:1;min-width:0">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap">' +
@@ -833,7 +840,7 @@ function screenDetail() {
             it.lignes.map(lineBadge).join('') + (rec ? recommendedBadge() : '') +
           '</div>' +
           '<div style="font:700 20px \'Libre Franklin\';color:' + C.ink + ';margin-bottom:5px">' + esc(title) + '</div>' +
-          '<div style="font:500 13px \'IBM Plex Mono\';color:' + C.mut + '">' + esc(S.from) + ' → ' + esc(S.to) + ' · ' + it.duree_min + ' min</div>' +
+          '<div style="font:500 13px \'IBM Plex Mono\';color:' + C.mut + '">' + esc(S.from) + ' → ' + esc(S.to) + ' · ' + it.duree_min + ' min' + (creneau(it) ? ' · ' + creneau(it) : '') + '</div>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;align-items:center;gap:8px;flex-shrink:0">' +
           gauge(sc, 76, 7) +
