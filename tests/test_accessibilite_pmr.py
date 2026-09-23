@@ -165,7 +165,7 @@ class TestAlerteMetier(unittest.TestCase):
     def test_inconnu_non_annonce_comme_panne(self):
         r = self._alertes("inconnu")
         self.assertNotIn("Ascenseur en panne", r["alertes"])
-        self.assertIn("Accessibilité non renseignée", r["alertes"])
+        self.assertIn("Accessibilité non documentée", r["alertes"])
 
     def test_inconnu_n_est_pas_un_point_fort(self):
         r = self._alertes("inconnu")

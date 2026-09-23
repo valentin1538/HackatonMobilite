@@ -454,6 +454,61 @@ def _score_accessibilite(sections: list) -> dict:
         "score":      score,
     }
 
+# ─── Dimension : Accessibilité sensorielle ──────────────────────────────────
+
+def _score_accessibilite_sensorielle(sections: list) -> dict:
+    """Annonces visuelles et sonores aux arrêts empruntés.
+
+    Complète l'accessibilité en fauteuil : le défi 4 porte sur l'accessibilité
+    au sens large, et ces équipements concernent les voyageurs malvoyants ou
+    malentendants. Contrairement à `has_wheelchair_boarding`, la donnée est
+    dense — environ 97 % des arrêts inspectés en sont pourvus.
+
+    Dimension informative : elle n'entre pas dans le score de confort, comme
+    la climatisation.
+    """
+    arrets = []
+
+    for section in sections:
+        if section.get("type") != "public_transport":
+            continue
+        sdts = section.get("stop_date_times", [])
+        utilises = [sdts[0], sdts[-1]] if len(sdts) >= 2 else sdts
+        for sdt in utilises:
+            stop_point = sdt.get("stop_point", {})
+            equipements = stop_point.get("equipments") or []
+            arrets.append({
+                "station": stop_point.get("name", "?"),
+                "visuel":  "has_visual_announcement" in equipements,
+                "sonore":  "has_audible_announcement" in equipements,
+            })
+
+    if not arrets:
+        return {"statut": "inconnu", "label": "Non documenté", "visuel": 0,
+                "sonore": 0, "total": 0, "manquants": [], "score": 5}
+
+    visuel = sum(1 for a in arrets if a["visuel"])
+    sonore = sum(1 for a in arrets if a["sonore"])
+    manquants = [a["station"] for a in arrets if not (a["visuel"] and a["sonore"])]
+
+    if not manquants:
+        statut, label, score = "complete", "Annonces visuelles et sonores", 10
+    elif visuel or sonore:
+        statut, label, score = "partielle", "Annonces partielles", 6
+    else:
+        statut, label, score = "aucune", "Aucune annonce documentée", 3
+
+    return {
+        "statut":    statut,
+        "label":     label,
+        "visuel":    visuel,
+        "sonore":    sonore,
+        "total":     len(arrets),
+        "manquants": manquants,
+        "score":     score,
+    }
+
+
 # ─── Dimension : Correspondances ────────────────────────────────────────────
 
 def _score_correspondances(sections: list) -> dict:
@@ -559,7 +614,7 @@ def _build_business_summary(dimensions: dict, score_confort: float) -> dict:
         alertes.append("Ascenseur en panne")
     elif statut_acc == "inconnu":
         # Ni une alerte ni un point fort : IDFM n'a rien renvoyé sur ce trajet.
-        alertes.append("Accessibilité non renseignée")
+        alertes.append("Accessibilité non documentée")
     else:
         points_forts.append("Accessibilité stable")
 
@@ -635,6 +690,7 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     aff   = _score_affluence(heure, station_names, affluence_data, jour_semaine)
     clim  = _score_climatisation(lignes, clim_data)
     acc   = _score_accessibilite(sections)
+    sens  = _score_accessibilite_sensorielle(sections)
     corr  = _score_correspondances(sections)
     equip = _score_equipements(station_names, fontaines_idx, sanitaires_idx)
     meteo_raw = _fetch_meteo(departure_dt)
@@ -686,6 +742,7 @@ def enrich(journey: dict, departure_dt: str) -> dict:
         "affluence":      aff,
         "climatisation":  clim,
         "accessibilite":  acc,
+        "accessibilite_sensorielle": sens,
         "correspondances": corr,
         "equipements":    equip,
         "meteo":          meteo,

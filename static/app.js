@@ -180,7 +180,7 @@ function bandFor(score) {
 function alertMeta(text) {
   var t = (text || '').toLowerCase();
   if (/affluence|charg/.test(t))              return { ic: 'users',    col: C.amber   };
-  if (/non renseign/.test(t))                 return { ic: 'accessibility', col: C.mut };
+  if (/non document|non renseign/.test(t))                 return { ic: 'accessibility', col: C.mut };
   if (/ascenseur|panne/.test(t))              return { ic: 'alert',    col: C.red     };
   if (/climati|ventil/.test(t))               return { ic: 'wind',     col: '#3f6f8a' };
   if (/équipement|toilette|fontaine/.test(t)) return { ic: 'droplet',  col: '#2f8f7f' };
@@ -745,6 +745,7 @@ function screenDetail() {
     { label: 'Correspondances', weight: 20,   score: d.correspondances.score, extra: d.correspondances.nb === 0 ? 'Direct' : (d.correspondances.nb + ' corresp.') },
     { label: 'Équipements',     weight: 15,   score: d.equipements.score,     extra: [d.equipements.toilettes && 'toilettes', d.equipements.fontaines && 'fontaines'].filter(Boolean).join(', ') || 'aucun' },
     { label: 'Climatisation',   weight: null, score: d.climatisation.score,   extra: d.climatisation.label },
+    { label: 'Annonces',        weight: null, score: d.accessibilite_sensorielle.score, extra: d.accessibilite_sensorielle.label },
   ];
   if (d.meteo && (d.meteo.alertes.length > 0 || d.meteo.score < 10)) {
     dims.push({ label: 'Météo', weight: null, score: d.meteo.score, extra: d.meteo.temperature !== null ? Math.round(d.meteo.temperature) + '°C' : '' });

@@ -99,6 +99,12 @@ def afficher_itineraire(idx: int, result: dict):
     else:
         print(f"  ♿ Accessible en fauteuil ({acc['nb_checked']} arrêt(s) documenté(s))")
 
+    sens = d["accessibilite_sensorielle"]
+    if sens["statut"] == "complete":
+        print(f"  🔊 {sens['label']} ({sens['total']} arrêt(s))")
+    elif sens["statut"] != "inconnu":
+        print(f"  🔊 {sens['label']} — visuel {sens['visuel']}/{sens['total']}, sonore {sens['sonore']}/{sens['total']}")
+
     print(
         f"  🚻 Toilettes : {'oui' if d['equipements']['toilettes'] else 'non':<6}"
         f"  🚰 Fontaines : {'oui' if d['equipements']['fontaines'] else 'non'}"
