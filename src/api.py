@@ -152,6 +152,18 @@ def post_itineraries(
     if not api_key:
         raise HTTPException(status_code=500, detail="IDFM_API_KEY manquante")
 
+    # ── Validation de la date ────────────────────────────────────────────
+    from datetime import datetime as _dt, timedelta as _td
+    try:
+        req_date = _dt.strptime(req.datetime[:8], "%Y%m%d").date()
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail="Format datetime invalide (attendu YYYYMMDDThhmmss)")
+    today = _dt.now().date()
+    if req_date < today:
+        raise HTTPException(status_code=400, detail="La date ne peut pas être dans le passé.")
+    if (req_date - today).days > 16:
+        raise HTTPException(status_code=400, detail="Les prévisions sont limitées à 16 jours.")
+
     headers = {"apikey": api_key}
 
     dep_id = _get_place_id(req.depart, headers)

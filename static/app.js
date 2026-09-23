@@ -44,6 +44,7 @@ var S = {
   to:          '',
   timeMode:    'now',   // 'now' | 'depart' | 'arrive'
   time:        '08:30',
+  date:        '',
   cardStyle:   'B',
   filters:     { access: false, crowd: false, air: false },
   results:     null,
@@ -67,13 +68,43 @@ function esc(str) {
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
+// Initialise la date à aujourd'hui
+(function() { var d = new Date(); S.date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); })();
+
+function todayStr() {
+  var d = new Date();
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+function maxDateStr() {
+  var d = new Date();
+  d.setDate(d.getDate() + 16);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+function formatDateShort(dateStr) {
+  var mois = ['jan.','fév.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  var parts = (dateStr || '').split('-');
+  var d = parseInt(parts[2], 10) || 1;
+  var m = (parseInt(parts[1], 10) || 1) - 1;
+  var y = parseInt(parts[0], 10) || new Date().getFullYear();
+  var today = todayStr();
+  if (dateStr === today) return "Aujourd'hui";
+  var tom = new Date(); tom.setDate(tom.getDate() + 1);
+  var tomStr = tom.getFullYear() + '-' + pad(tom.getMonth() + 1) + '-' + pad(tom.getDate());
+  if (dateStr === tomStr) return 'Demain';
+  return d + ' ' + mois[m] + ' ' + y;
+}
+
 function toDatetime(timeStr) {
-  var now = new Date();
+  var dp = (S.date || todayStr()).split('-');
+  var y  = parseInt(dp[0], 10) || new Date().getFullYear();
+  var mo = parseInt(dp[1], 10) || (new Date().getMonth() + 1);
+  var dy = parseInt(dp[2], 10) || new Date().getDate();
   var parts = (timeStr || '').split(':');
   var h = parseInt(parts[0], 10) || 0;
   var m = parseInt(parts[1], 10) || 0;
-  return '' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
-    'T' + pad(h) + pad(m) + '00';
+  return '' + y + pad(mo) + pad(dy) + 'T' + pad(h) + pad(m) + '00';
 }
 
 function buildDatetime() {
@@ -91,6 +122,7 @@ function buildDatetimeRepresents() {
 
 function setTimeMode(mode) {
   S.timeMode = mode;
+  if (mode !== 'now' && !S.date) S.date = todayStr();
   render();
   // After render, if a time input is now visible, focus it for keyboard users
   if (mode !== 'now') {
@@ -101,6 +133,16 @@ function setTimeMode(mode) {
 
 function openTimePicker() {
   var inp = document.getElementById('inp-time');
+  if (!inp) return;
+  if (inp.showPicker) {
+    try { inp.showPicker(); } catch (e) { inp.focus(); }
+  } else {
+    inp.focus();
+  }
+}
+
+function openDatePicker() {
+  var inp = document.getElementById('inp-date');
   if (!inp) return;
   if (inp.showPicker) {
     try { inp.showPicker(); } catch (e) { inp.focus(); }
@@ -211,6 +253,7 @@ var ICON_PATHS = {
   pin:           { p: ['M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0'], c: [[12,10,3]] },
   search:        { p: ['m21 21-4.34-4.34'], c: [[11,11,8]] },
   nav:           { p: ['m3 11 19-9-9 19-2-8-8-2z'] },
+  calendar:      { p: ['M8 2v4','M16 2v4','M3 10h18','M21 8.5V17a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8.5a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'] },
 };
 
 function icon(name, size, color, sw) {
@@ -563,11 +606,18 @@ function screenSearch() {
       '</div>' +
       (S.timeMode !== 'now'
         ? (function() {
-            var lbl = S.timeMode === 'depart' ? 'Heure de départ' : 'Heure d\'arrivée souhaitée';
-            return '<div onclick="openTimePicker()" style="display:flex;align-items:center;gap:10px;padding-top:12px;border-top:1px solid #f0f3f6;cursor:pointer">' +
+            var lblTime = S.timeMode === 'depart' ? 'Heure de départ' : 'Heure d\'arrivée souhaitée';
+            var minD = todayStr();
+            var maxD = maxDateStr();
+            return '<div onclick="openDatePicker()" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #f0f3f6;cursor:pointer">' +
+              icon('calendar', 18, C.primary, 2.2) +
+              '<span style="font:500 13px \'Libre Franklin\';color:' + C.mut + ';flex:1">Date</span>' +
+              '<input type="date" id="inp-date" value="' + esc(S.date) + '" min="' + minD + '" max="' + maxD + '" oninput="S.date=this.value" onclick="event.stopPropagation()" style="width:148px;text-align:right;border:none;background:transparent;outline:none;font:600 15px \'IBM Plex Mono\';color:' + C.ink + ';cursor:pointer"/>' +
+            '</div>' +
+            '<div onclick="openTimePicker()" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #f0f3f6;cursor:pointer">' +
               icon('clock', 18, C.primary, 2.2) +
-              '<label for="inp-time" style="font:500 13px \'Libre Franklin\';color:' + C.mut + ';flex:1;cursor:pointer">' + lbl + '</label>' +
-              '<input type="time" id="inp-time" value="' + esc(S.time) + '" aria-label="' + lbl + '" oninput="S.time=this.value" onclick="event.stopPropagation()" style="width:84px;text-align:right;border:none;background:transparent;outline:none;font:600 16px \'IBM Plex Mono\';color:' + C.ink + ';cursor:pointer"/>' +
+              '<span style="font:500 13px \'Libre Franklin\';color:' + C.mut + ';flex:1">' + lblTime + '</span>' +
+              '<input type="time" id="inp-time" value="' + esc(S.time) + '" oninput="S.time=this.value" onclick="event.stopPropagation()" style="width:84px;text-align:right;border:none;background:transparent;outline:none;font:600 15px \'IBM Plex Mono\';color:' + C.ink + ';cursor:pointer"/>' +
             '</div>';
           })()
         : ''
@@ -622,7 +672,7 @@ function screenResults() {
           icon('arrow', 16, C.faint, 2) +
           '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px">' + esc(S.to) + '</span>' +
         '</div>' +
-        '<div style="font:500 12px \'IBM Plex Mono\';color:' + C.faint + ';margin-top:5px">' + (S.timeMode === 'arrive' ? 'Arriver à ' : 'Départ ') + esc(S.time) + ' · ' + all.length + ' itinéraire' + (all.length > 1 ? 's' : '') + '</div>' +
+        '<div style="font:500 12px \'IBM Plex Mono\';color:' + C.faint + ';margin-top:5px">' + formatDateShort(S.date) + ' · ' + (S.timeMode === 'arrive' ? 'Arriver à ' : 'Départ ') + esc(S.time) + ' · ' + all.length + ' itinéraire' + (all.length > 1 ? 's' : '') + '</div>' +
       '</div>' +
       '<div style="font:600 13px \'Libre Franklin\';color:' + C.primary + ';flex-shrink:0">Modifier</div>' +
     '</div>' +
@@ -786,6 +836,19 @@ function doSearch() {
     render();
     return;
   }
+  // Validation date (modes depart / arrive uniquement)
+  if (S.timeMode !== 'now' && S.date) {
+    if (S.date < todayStr()) {
+      S.error = 'La date ne peut pas être dans le passé.';
+      render();
+      return;
+    }
+    if (S.date > maxDateStr()) {
+      S.error = 'Les prévisions sont limitées à 16 jours.';
+      render();
+      return;
+    }
+  }
   // Reset filters for the new search
   S.filters = { access: false, crowd: false, air: false };
   fetchItineraries();
@@ -801,10 +864,11 @@ function fetchItineraries() {
   var dt   = buildDatetime();
   var repr = buildDatetimeRepresents();
 
-  // Snapshot the display time for the results header
+  // Snapshot the display time/date for the results header
   if (S.timeMode === 'now') {
     var nowD = new Date();
     S.time = pad(nowD.getHours()) + ':' + pad(nowD.getMinutes());
+    S.date = todayStr();
   }
 
   fetch('/itineraries', {
