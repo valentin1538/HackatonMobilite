@@ -74,20 +74,38 @@ def _apply_charge(itineraire: dict, charge: int) -> dict:
 
 # ─── Filtres ─────────────────────────────────────────────────────────────────
 
+# Seuils des trois filtres. Définis ici et nulle part ailleurs : l'API expose
+# les drapeaux calculés dans `filtres_compatibles`, le front les consomme tels
+# quels au lieu de redéfinir les mêmes seuils de son côté.
+#
+# Principe commun aux trois : une donnée absente n'est jamais servie comme une
+# garantie. "On ne sait pas" ne passe aucun filtre.
+_AFFLUENCE_CALME = ("LOW", "VERY_LOW")
+_CLIM_ACCEPTEE   = ("total", "partiel")
+
+
+def _flags_filtres(itineraire: dict) -> dict:
+    """Compatibilité de l'itinéraire avec chacun des trois filtres."""
+    d = itineraire["dimensions"]
+    return {
+        "accessible":   d["accessibilite"]["statut"] == "accessible",
+        "peu_de_monde": d["affluence"]["niveau"] in _AFFLUENCE_CALME,
+        "climatise":    d["climatisation"]["status"] in _CLIM_ACCEPTEE,
+    }
+
+
 def _passe_filtres(
     itineraire: dict,
     accessible: bool,
     peu_de_monde: bool,
     climatise: bool,
 ) -> bool:
-    d = itineraire["dimensions"]
-    # Un trajet dont l'accessibilité n'est pas renseignée est écarté : pour ce
-    # filtre, "on ne sait pas" ne doit pas être servi comme "c'est accessible".
-    if accessible and d["accessibilite"]["statut"] != "accessible":
+    flags = _flags_filtres(itineraire)
+    if accessible and not flags["accessible"]:
         return False
-    if peu_de_monde and d["affluence"]["niveau"] not in ("LOW", "VERY_LOW"):
+    if peu_de_monde and not flags["peu_de_monde"]:
         return False
-    if climatise and d["climatisation"]["status"] == "aucune":
+    if climatise and not flags["climatise"]:
         return False
     return True
 
@@ -165,6 +183,7 @@ def post_itineraries(
         enrichi = enrich(j, req.datetime)
         key = _charge_key(dep_id, arr_id, enrichi["lignes"], req.datetime)
         enrichi = _apply_charge(enrichi, _get_charge(key))
+        enrichi["filtres_compatibles"] = _flags_filtres(enrichi)
         itineraires.append(enrichi)
 
         # Alimente l'historique d'apprentissage uniquement avec des trajets

@@ -157,15 +157,23 @@ function accessibiliteLabel(acc) {
   return 'Stable';
 }
 
+// Les seuils des trois filtres sont définis côté API (_flags_filtres) et
+// renvoyés par itinéraire dans `filtres_compatibles`. Le front ne les
+// redéfinit pas : deux implémentations divergeaient silencieusement.
+function compatible(it, cle) {
+  var f = it.filtres_compatibles;
+  return !!(f && f[cle]);
+}
+
 function availableFilters() {
   if (!S.results || !S.results.itineraires.length) {
     return { access: true, crowd: true, air: true };
   }
   var all = S.results.itineraires;
   return {
-    access: all.some(function(it) { return it.dimensions.accessibilite.ok; }),
-    crowd:  all.some(function(it) { return ['LOW', 'VERY_LOW'].indexOf(it.dimensions.affluence.niveau) !== -1; }),
-    air:    all.some(function(it) { return it.dimensions.climatisation.status !== 'aucune'; }),
+    access: all.some(function(it) { return compatible(it, 'accessible'); }),
+    crowd:  all.some(function(it) { return compatible(it, 'peu_de_monde'); }),
+    air:    all.some(function(it) { return compatible(it, 'climatise'); }),
   };
 }
 
@@ -179,10 +187,9 @@ function syncFilters() {
 function filteredItineraires() {
   if (!S.results) return [];
   return S.results.itineraires.filter(function(it) {
-    var d = it.dimensions;
-    if (S.filters.access && !d.accessibilite.ok) return false;
-    if (S.filters.crowd  && ['VERY_HIGH', 'HIGH'].indexOf(d.affluence.niveau) !== -1) return false;
-    if (S.filters.air    && d.climatisation.status === 'aucune') return false;
+    if (S.filters.access && !compatible(it, 'accessible'))   return false;
+    if (S.filters.crowd  && !compatible(it, 'peu_de_monde')) return false;
+    if (S.filters.air    && !compatible(it, 'climatise'))    return false;
     return true;
   });
 }
