@@ -388,30 +388,53 @@ def _score_climatisation(lignes: list, clim_data: dict) -> dict:
 # ─── Dimension : Accessibilité ──────────────────────────────────────────────
 
 def _score_accessibilite(sections: list) -> dict:
+    """Statut d'accessibilité du trajet, d'après les équipements renvoyés par IDFM.
+
+    L'absence de donnée n'est PAS traitée comme une garantie d'accessibilité :
+    une station dont l'état d'ascenseur est inconnu rend le trajet "inconnu"
+    et non "accessible". Un utilisateur en fauteuil ne doit jamais se déplacer
+    sur la foi d'une information qui n'existe pas.
+    """
     pannes = []
+    inconnues = []
     nb_checked = 0
 
     for section in sections:
         if section.get("type") != "public_transport":
             continue
         for sdt in section.get("stop_date_times", []):
+            station = sdt.get("stop_point", {}).get("name", "?")
             eq = sdt.get("equipment_availability", {})
-            if not eq:
+            status = eq.get("elevator", "unknown") if eq else "unknown"
+
+            if status == "unknown":
+                inconnues.append(station)
                 continue
+
             nb_checked += 1
-            status = eq.get("elevator", "unknown")
-            if status not in ("available", "unknown"):
-                pannes.append({
-                    "station": sdt.get("stop_point", {}).get("name", "?"),
-                    "status": status,
-                })
+            if status != "available":
+                pannes.append({"station": station, "status": status})
 
-    if not pannes:
-        score = 10 if nb_checked > 0 else 7
-    else:
+    if pannes:
+        statut = "panne"
         score = max(0, 10 - len(pannes) * 3)
+    elif inconnues or nb_checked == 0:
+        statut = "inconnu"
+        score = 7
+    else:
+        statut = "accessible"
+        score = 10
 
-    return {"ok": len(pannes) == 0, "pannes": pannes, "nb_checked": nb_checked, "score": score}
+    return {
+        # `ok` vaut True uniquement si l'accessibilité est VÉRIFIÉE, jamais par
+        # défaut : c'est ce que consomment les filtres côté API et côté front.
+        "ok":         statut == "accessible",
+        "statut":     statut,
+        "pannes":     pannes,
+        "inconnues":  inconnues,
+        "nb_checked": nb_checked,
+        "score":      score,
+    }
 
 
 # ─── Dimension : Correspondances ────────────────────────────────────────────
@@ -514,8 +537,12 @@ def _build_business_summary(dimensions: dict, score_confort: float) -> dict:
     else:
         points_forts.append("Affluence modérée")
 
-    if not dimensions["accessibilite"]["ok"]:
+    statut_acc = dimensions["accessibilite"]["statut"]
+    if statut_acc == "panne":
         alertes.append("Ascenseur en panne")
+    elif statut_acc == "inconnu":
+        # Ni une alerte ni un point fort : IDFM n'a rien renvoyé sur ce trajet.
+        alertes.append("Accessibilité non renseignée")
     else:
         points_forts.append("Accessibilité stable")
 

@@ -138,6 +138,7 @@ function bandFor(score) {
 function alertMeta(text) {
   var t = (text || '').toLowerCase();
   if (/affluence|charg/.test(t))              return { ic: 'users',    col: C.amber   };
+  if (/non renseign/.test(t))                 return { ic: 'accessibility', col: C.mut };
   if (/ascenseur|panne/.test(t))              return { ic: 'alert',    col: C.red     };
   if (/climati|ventil/.test(t))               return { ic: 'wind',     col: '#3f6f8a' };
   if (/équipement|toilette|fontaine/.test(t)) return { ic: 'droplet',  col: '#2f8f7f' };
@@ -148,6 +149,13 @@ function alertMeta(text) {
 }
 
 // ── Filter helpers ────────────────────────────────────────────────────────────
+
+function accessibiliteLabel(acc) {
+  // "Non renseigné" n'est pas "Stable" : sans donnée IDFM, on ne certifie rien.
+  if (acc.statut === 'panne')   return acc.pannes.length + ' panne(s)';
+  if (acc.statut === 'inconnu') return 'Non renseigné';
+  return 'Stable';
+}
 
 function availableFilters() {
   if (!S.results || !S.results.itineraires.length) {
@@ -635,7 +643,7 @@ function screenDetail() {
 
   var dims = [
     { label: 'Affluence',       weight: 35,   score: d.affluence.score,       extra: d.affluence.label },
-    { label: 'Accessibilité',   weight: 30,   score: d.accessibilite.score,   extra: d.accessibilite.ok ? 'Stable' : (d.accessibilite.pannes.length + ' panne(s)') },
+    { label: 'Accessibilité',   weight: 30,   score: d.accessibilite.score,   extra: accessibiliteLabel(d.accessibilite) },
     { label: 'Correspondances', weight: 20,   score: d.correspondances.score, extra: d.correspondances.nb === 0 ? 'Direct' : (d.correspondances.nb + ' corresp.') },
     { label: 'Équipements',     weight: 15,   score: d.equipements.score,     extra: [d.equipements.toilettes && 'toilettes', d.equipements.fontaines && 'fontaines'].filter(Boolean).join(', ') || 'aucun' },
     { label: 'Climatisation',   weight: null, score: d.climatisation.score,   extra: d.climatisation.label },

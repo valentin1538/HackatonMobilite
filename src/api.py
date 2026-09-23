@@ -81,7 +81,9 @@ def _passe_filtres(
     climatise: bool,
 ) -> bool:
     d = itineraire["dimensions"]
-    if accessible and not d["accessibilite"]["ok"]:
+    # Un trajet dont l'accessibilité n'est pas renseignée est écarté : pour ce
+    # filtre, "on ne sait pas" ne doit pas être servi comme "c'est accessible".
+    if accessible and d["accessibilite"]["statut"] != "accessible":
         return False
     if peu_de_monde and d["affluence"]["niveau"] not in ("LOW", "VERY_LOW"):
         return False
