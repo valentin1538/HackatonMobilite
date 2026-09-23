@@ -802,7 +802,33 @@ def filtrer_journeys(journeys: list) -> list:
     return en_transport or journeys
 
 
+def _tri_confort(itineraire: dict) -> tuple:
+    """Clé de tri : confort d'abord, puis rapidité, puis heure de départ."""
+    return (
+        -itineraire["score_confort"],
+        itineraire["duree_min"],
+        itineraire.get("heure_depart") or "99:99",
+    )
+
+
+def classer(itineraires: list) -> list:
+    """Trie par confort et désigne un unique meilleur choix.
+
+    `recommandation` reste un jugement absolu sur un itinéraire pris seul
+    ("ce trajet est bon"). `meilleur_choix` est comparatif et ne peut être vrai
+    que pour un seul itinéraire de la liste : un comparateur qui recommande
+    toutes les options ne recommande rien. Les deux coexistent car ils ne
+    répondent pas à la même question.
+    """
+    classes = sorted(itineraires, key=_tri_confort)
+    for rang, it in enumerate(classes):
+        it["meilleur_choix"] = (rang == 0)
+        it["rang"] = rang + 1
+    return classes
+
+
 def enrich_journeys(journeys: list, departure_dt: str) -> list:
     """Enrichit une liste d'itinéraires avec la logique métier de confort."""
-    return [enrich(journey, departure_dt) for journey in filtrer_journeys(journeys)]
+    return classer([enrich(journey, departure_dt)
+                    for journey in filtrer_journeys(journeys)])
 

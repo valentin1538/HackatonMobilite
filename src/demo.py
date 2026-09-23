@@ -81,13 +81,15 @@ def afficher_itineraire(idx: int, result: dict):
     if result.get("heure_depart") and result.get("heure_arrivee"):
         horaires = f"   {result['heure_depart']} → {result['heure_arrivee']}"
 
+    marque = "  ⭐ MEILLEUR CHOIX" if result.get("meilleur_choix") else ""
+
     print(f"{'━'*55}")
-    print(f"Option {idx+1} — {lignes_str:<20}  {result['duree_min']} min{horaires}")
+    print(f"Option {idx+1} — {lignes_str:<20}  {result['duree_min']} min{horaires}{marque}")
     print(
         f"  {ICONES_AFFLUENCE.get(d['affluence']['niveau'], '👥')} {d['affluence']['label']:<22}"
         f"  {ICONES_CLIM.get(d['climatisation']['status'], '🌡️?')} {d['climatisation']['label']:<28}"
     )
-    print(f"  🧭 Recommandation : {result['business_summary']['recommandation']}")
+    print(f"  🧭 Qualité : {result['business_summary']['recommandation']}")
 
     print(f"  🔁 Correspondances : {d['correspondances']['nb']}")
     for c in d["correspondances"]["details"]:
