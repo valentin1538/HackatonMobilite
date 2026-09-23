@@ -108,38 +108,43 @@ _DOW_TO_CAT = {
 }
 
 
-def _is_future(departure_dt: str) -> bool:
-    """Vrai si la date demandée est strictement dans le futur (après aujourd'hui).
+# Au-delà de cet écart avec l'instant présent, un trajet n'est plus considéré
+# comme "temps réel" : la météo/l'accessibilité capturées maintenant ne sont
+# plus une estimation fiable de l'état au moment du trajet.
+SEUIL_TEMPS_REEL_HEURES = 1.0
 
-    Sert à distinguer un trajet observé en temps réel (aujourd'hui ou passé) d'un
-    trajet futur, pour lequel météo/accessibilité ne peuvent pas s'appuyer
-    sur des données live et doivent être estimées.
+
+def _is_future(departure_dt: str) -> bool:
+    """Vrai si l'heure demandée est à plus de SEUIL_TEMPS_REEL_HEURES de maintenant.
+
+    Basé sur l'écart réel en heures, pas seulement le jour calendaire : "aujourd'hui
+    dans 6h" doit être traité comme un trajet futur (météo en prévision, éligible
+    au modèle ML), pas comme une observation temps réel. Un trajet dans le passé
+    (écart négatif) reste considéré comme non-futur.
     """
     try:
-        cible = datetime.strptime(departure_dt[:8], "%Y%m%d").date()
-    except (ValueError, IndexError):
+        cible = datetime.strptime(departure_dt, "%Y%m%dT%H%M%S")
+    except ValueError:
         return False
-    return cible > datetime.now().date()
+    ecart_heures = (cible - datetime.now()).total_seconds() / 3600
+    return ecart_heures > SEUIL_TEMPS_REEL_HEURES
 
 
 # ─── Météo (Open-Meteo, sans clé API) ──────────────────────────────────────
 
 def _fetch_meteo(departure_dt: str) -> dict:
     try:
-        cible = datetime.strptime(departure_dt[:8], "%Y%m%d").date()
-        heure = int(departure_dt[9:11])
-    except (ValueError, IndexError):
-        cible = datetime.now().date()
-        heure = datetime.now().hour
+        cible = datetime.strptime(departure_dt, "%Y%m%dT%H%M%S")
+    except ValueError:
+        cible = datetime.now()
 
-    aujourd_hui = datetime.now().date()
-    delta_days = (cible - aujourd_hui).days
-
-    if delta_days == 0:
+    if not _is_future(departure_dt):
         return _fetch_meteo_actuelle()
-    if 0 < delta_days <= 16:
-        return _fetch_meteo_prevision(cible, heure, delta_days)
-    # Date passée ou trop lointaine (> 16 jours) : pas de prévision fiable
+
+    delta_days = (cible.date() - datetime.now().date()).days
+    if 0 <= delta_days <= 16:
+        return _fetch_meteo_prevision(cible.date(), cible.hour, delta_days)
+    # Trop lointain (> 16 jours) : pas de prévision fiable
     return {"temperature": None, "precipitation": 0, "weathercode": 0}
 
 
