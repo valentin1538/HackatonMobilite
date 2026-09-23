@@ -233,6 +233,16 @@ function syncFilters() {
   });
 }
 
+function estMeilleur(it) {
+  // L'API trie par confort decroissant : le meilleur d'un sous-ensemble
+  // filtre cote client est simplement son premier element. Le badge exige en
+  // plus une qualite absolue suffisante, pour ne pas "recommander" le moins
+  // mauvais d'une mauvaise serie.
+  if (it.recommandation !== 'Recommandé') return false;
+  var visibles = filteredItineraires();
+  return visibles.length > 0 && visibles[0] === it;
+}
+
 function filteredItineraires() {
   if (!S.results) return [];
   return S.results.itineraires.filter(function(it) {
@@ -508,7 +518,7 @@ function initAutocomplete() {
 function cardA(it, idx) {
   var sc    = it.score_confort;
   var band  = bandFor(sc);
-  var rec   = it.recommandation === 'Recommandé';
+  var rec   = estMeilleur(it);
   var title = buildTitle(it.lignes, it.nb_correspondances);
   var alts  = it.business_summary.alertes.slice(0, 3);
 
@@ -535,7 +545,7 @@ function cardA(it, idx) {
 function cardB(it, idx) {
   var sc    = it.score_confort;
   var band  = bandFor(sc);
-  var rec   = it.recommandation === 'Recommandé';
+  var rec   = estMeilleur(it);
   var title = buildTitle(it.lignes, it.nb_correspondances);
   var alts  = it.business_summary.alertes.slice(0, 3);
 
@@ -565,7 +575,7 @@ function cardB(it, idx) {
 function cardC(it, idx) {
   var sc    = it.score_confort;
   var band  = bandFor(sc);
-  var rec   = it.recommandation === 'Recommandé';
+  var rec   = estMeilleur(it);
   var title = buildTitle(it.lignes, it.nb_correspondances);
   var alts  = it.business_summary.alertes.slice(0, 2);
   var rowBg = rec ? 'background:#eef6f1;border:1px solid #cfe6da' : 'background:transparent;border:1px solid transparent';
@@ -742,7 +752,7 @@ function screenDetail() {
 
   var sc    = it.score_confort;
   var band  = bandFor(sc);
-  var rec   = it.recommandation === 'Recommandé';
+  var rec   = estMeilleur(it);
   var title = buildTitle(it.lignes, it.nb_correspondances);
   var d     = it.dimensions;
 

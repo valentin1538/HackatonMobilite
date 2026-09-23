@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 sys.stdout.reconfigure(encoding="utf-8")
 
 
-from enricher import enrich, filtrer_journeys, _norm_station, _load_affluence_idx
+from enricher import enrich, filtrer_journeys, classer, _norm_station, _load_affluence_idx
 from historique import log_trajet
 
 load_dotenv()
@@ -213,6 +213,10 @@ def post_itineraries(
             it for it in itineraires
             if _passe_filtres(it, accessible, peu_de_monde, climatise)
         ]
+
+    # Classement après filtrage : le meilleur choix doit être le meilleur parmi
+    # les itinéraires effectivement servis, pas un absent de la réponse.
+    itineraires = classer(itineraires)
 
     return {
         "depart":      req.depart,
