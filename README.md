@@ -49,19 +49,21 @@ Le frontend est servi directement par l'API : une seule commande suffit pour
 avoir l'application complète.
 
 ```bash
-uvicorn api:app --reload --app-dir src
+python -m uvicorn api:app --reload --app-dir src
 ```
 
 - application web : http://127.0.0.1:8000
 - documentation interactive de l'API : http://127.0.0.1:8000/docs
 
 L'option `--app-dir src` est nécessaire : les modules de `src/` s'importent
-entre eux à plat (`from enricher import ...`).
+entre eux à plat (`from enricher import ...`). Le préfixe `python -m` évite
+l'erreur `uvicorn n'est pas reconnu` quand le dossier `Scripts` de Python
+n'est pas dans le PATH.
 
 Pour changer de port :
 
 ```bash
-uvicorn api:app --reload --app-dir src --port 8080
+python -m uvicorn api:app --reload --app-dir src --port 8080
 ```
 
 ## Scripts en ligne de commande
