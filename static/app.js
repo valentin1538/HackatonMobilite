@@ -815,13 +815,6 @@ function screenDetail() {
     segsHtml = '<div style="background:#fff;border:1px solid ' + C.line + ';border-radius:18px;padding:22px;margin-top:14px">' +
       '<div style="font:700 15px \'Libre Franklin\';color:' + C.ink + ';margin-bottom:18px">Votre trajet</div>' +
       '<div style="display:flex;flex-direction:column">' + items + '</div>' +
-      '<div style="margin-top:16px;display:flex;gap:11px;background:#eef3fb;border:1px solid #dce6f6;border-radius:14px;padding:14px 16px">' +
-        '<div style="flex-shrink:0;margin-top:1px">' + icon('arrow', 17, C.primary, 2.2) + '</div>' +
-        '<div>' +
-          '<div style="font:600 13px \'Libre Franklin\';color:' + C.primary + ';margin-bottom:3px">Score dynamique</div>' +
-          '<div style="font:400 13px/1.5 \'Libre Franklin\';color:#4a5a72">Si trop de voyageurs choisissent cet itinéraire, son score d\'affluence baisse automatiquement pour répartir la charge sur les alternatives.</div>' +
-        '</div>' +
-      '</div>' +
     '</div>';
   }
 
