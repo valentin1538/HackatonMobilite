@@ -388,12 +388,17 @@ def _score_climatisation(lignes: list, clim_data: dict) -> dict:
 # ─── Dimension : Accessibilité ──────────────────────────────────────────────
 
 def _score_accessibilite(sections: list) -> dict:
-    """Statut d'accessibilité du trajet, d'après les équipements renvoyés par IDFM.
+    """Statut d'accessibilité en fauteuil du trajet, d'après les données IDFM.
 
-    L'absence de donnée n'est PAS traitée comme une garantie d'accessibilité :
-    une station dont l'état d'ascenseur est inconnu rend le trajet "inconnu"
-    et non "accessible". Un utilisateur en fauteuil ne doit jamais se déplacer
-    sur la foi d'une information qui n'existe pas.
+    La source est `stop_point["equipments"]`, la liste des équipements présents
+    à l'arrêt. Attention : cette liste ne recense que ce qui EXISTE. L'absence
+    de `has_wheelchair_boarding` ne signifie pas "non accessible" mais
+    "non documenté" — d'où le statut "inconnu" plutôt qu'un refus sec.
+
+    `equipment_availability` (état temps réel des ascenseurs) reste consulté
+    pour détecter une panne, mais le marketplace IDFM ne le renvoie pas
+    aujourd'hui : /equipment_reports répond "No code type exists into
+    equipment provider". Le code est conservé pour le jour où il sera activé.
     """
     pannes = []
     inconnues = []
@@ -402,18 +407,31 @@ def _score_accessibilite(sections: list) -> dict:
     for section in sections:
         if section.get("type") != "public_transport":
             continue
-        for sdt in section.get("stop_date_times", []):
-            station = sdt.get("stop_point", {}).get("name", "?")
-            eq = sdt.get("equipment_availability", {})
-            status = eq.get("elevator", "unknown") if eq else "unknown"
 
-            if status == "unknown":
-                inconnues.append(station)
+        # Seuls les arrêts où l'on monte et descend comptent : départ, arrivée
+        # et correspondances. Un arrêt simplement traversé n'a pas à être
+        # accessible — on n'y descend pas. Sans cette restriction, un unique
+        # arrêt intermédiaire non documenté suffisait à masquer un trajet
+        # entièrement accessible (cas de la ligne 14 via Gare de Lyon).
+        sdts = section.get("stop_date_times", [])
+        utilises = [sdts[0], sdts[-1]] if len(sdts) >= 2 else sdts
+
+        for sdt in utilises:
+            stop_point = sdt.get("stop_point", {})
+            station = stop_point.get("name", "?")
+
+            # Panne temps réel, si un jour la donnée arrive
+            eq_avail = sdt.get("equipment_availability", {}) or {}
+            status = eq_avail.get("elevator", "unknown")
+            if status not in ("available", "unknown"):
+                pannes.append({"station": station, "status": status})
                 continue
 
-            nb_checked += 1
-            if status != "available":
-                pannes.append({"station": station, "status": status})
+            equipements = stop_point.get("equipments") or []
+            if "has_wheelchair_boarding" in equipements:
+                nb_checked += 1
+            else:
+                inconnues.append(station)
 
     if pannes:
         statut = "panne"
@@ -434,6 +452,60 @@ def _score_accessibilite(sections: list) -> dict:
         "inconnues":  inconnues,
         "nb_checked": nb_checked,
         "score":      score,
+    }
+
+# ─── Dimension : Accessibilité sensorielle ──────────────────────────────────
+
+def _score_accessibilite_sensorielle(sections: list) -> dict:
+    """Annonces visuelles et sonores aux arrêts empruntés.
+
+    Complète l'accessibilité en fauteuil : le défi 4 porte sur l'accessibilité
+    au sens large, et ces équipements concernent les voyageurs malvoyants ou
+    malentendants. Contrairement à `has_wheelchair_boarding`, la donnée est
+    dense — environ 97 % des arrêts inspectés en sont pourvus.
+
+    Dimension informative : elle n'entre pas dans le score de confort, comme
+    la climatisation.
+    """
+    arrets = []
+
+    for section in sections:
+        if section.get("type") != "public_transport":
+            continue
+        sdts = section.get("stop_date_times", [])
+        utilises = [sdts[0], sdts[-1]] if len(sdts) >= 2 else sdts
+        for sdt in utilises:
+            stop_point = sdt.get("stop_point", {})
+            equipements = stop_point.get("equipments") or []
+            arrets.append({
+                "station": stop_point.get("name", "?"),
+                "visuel":  "has_visual_announcement" in equipements,
+                "sonore":  "has_audible_announcement" in equipements,
+            })
+
+    if not arrets:
+        return {"statut": "inconnu", "label": "Non documenté", "visuel": 0,
+                "sonore": 0, "total": 0, "manquants": [], "score": 5}
+
+    visuel = sum(1 for a in arrets if a["visuel"])
+    sonore = sum(1 for a in arrets if a["sonore"])
+    manquants = [a["station"] for a in arrets if not (a["visuel"] and a["sonore"])]
+
+    if not manquants:
+        statut, label, score = "complete", "Annonces visuelles et sonores", 10
+    elif visuel or sonore:
+        statut, label, score = "partielle", "Annonces partielles", 6
+    else:
+        statut, label, score = "aucune", "Aucune annonce documentée", 3
+
+    return {
+        "statut":    statut,
+        "label":     label,
+        "visuel":    visuel,
+        "sonore":    sonore,
+        "total":     len(arrets),
+        "manquants": manquants,
+        "score":     score,
     }
 
 
@@ -542,7 +614,7 @@ def _build_business_summary(dimensions: dict, score_confort: float) -> dict:
         alertes.append("Ascenseur en panne")
     elif statut_acc == "inconnu":
         # Ni une alerte ni un point fort : IDFM n'a rien renvoyé sur ce trajet.
-        alertes.append("Accessibilité non renseignée")
+        alertes.append("Accessibilité non documentée")
     else:
         points_forts.append("Accessibilité stable")
 
@@ -618,6 +690,7 @@ def enrich(journey: dict, departure_dt: str) -> dict:
     aff   = _score_affluence(heure, station_names, affluence_data, jour_semaine)
     clim  = _score_climatisation(lignes, clim_data)
     acc   = _score_accessibilite(sections)
+    sens  = _score_accessibilite_sensorielle(sections)
     corr  = _score_correspondances(sections)
     equip = _score_equipements(station_names, fontaines_idx, sanitaires_idx)
     meteo_raw = _fetch_meteo(departure_dt)
@@ -669,6 +742,7 @@ def enrich(journey: dict, departure_dt: str) -> dict:
         "affluence":      aff,
         "climatisation":  clim,
         "accessibilite":  acc,
+        "accessibilite_sensorielle": sens,
         "correspondances": corr,
         "equipements":    equip,
         "meteo":          meteo,

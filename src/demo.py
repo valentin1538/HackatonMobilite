@@ -94,9 +94,16 @@ def afficher_itineraire(idx: int, result: dict):
         stations_ko = ", ".join(p["station"] for p in acc["pannes"])
         print(f"  ⚠️  Ascenseur en panne : {stations_ko}")
     elif acc["statut"] == "inconnu":
-        print(f"  ❔ Accessibilité non renseignée ({len(acc['inconnues'])} station(s))")
+        stations = ", ".join(acc["inconnues"][:3]) or "aucune donnée"
+        print(f"  ❔ Embarquement fauteuil non documenté : {stations}")
     else:
-        print(f"  ✅ Accessible (vérifié sur {acc['nb_checked']} station(s))")
+        print(f"  ♿ Accessible en fauteuil ({acc['nb_checked']} arrêt(s) documenté(s))")
+
+    sens = d["accessibilite_sensorielle"]
+    if sens["statut"] == "complete":
+        print(f"  🔊 {sens['label']} ({sens['total']} arrêt(s))")
+    elif sens["statut"] != "inconnu":
+        print(f"  🔊 {sens['label']} — visuel {sens['visuel']}/{sens['total']}, sonore {sens['sonore']}/{sens['total']}")
 
     print(
         f"  🚻 Toilettes : {'oui' if d['equipements']['toilettes'] else 'non':<6}"
