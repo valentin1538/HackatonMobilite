@@ -321,25 +321,65 @@ function alertInline(text) {
 
 // ── Filter chips ──────────────────────────────────────────────────────────────
 
+// Pourquoi un filtre est indisponible sur cette recherche. Textes d'affichage
+// uniquement : les seuils restent definis cote API.
+function filterReason(cle, all) {
+  if (cle === 'access') {
+    var statuts = all.map(function(it) { return it.dimensions.accessibilite.statut; });
+    if (statuts.length && statuts.every(function(s) { return s === 'inconnu'; })) {
+      return 'accessibilité non renseignée par IDFM sur ce trajet';
+    }
+    return 'ascenseur en panne ou non vérifié sur tous les itinéraires';
+  }
+  if (cle === 'crowd') return 'tous les itinéraires sont chargés à cette heure';
+  return 'aucune ligne climatisée sur ce trajet';
+}
+
 function filterChips() {
   var avail = availableFilters();
-  var defs = [
+  var all   = S.results ? S.results.itineraires : [];
+  var defs  = [
     ['access', 'Ascenseurs',   'accessibility'],
     ['crowd',  'Peu de monde', 'users'],
     ['air',    'Climatisé',    'wind'],
-  ].filter(function(d) { return avail[d[0]]; });
+  ];
 
-  if (!defs.length) {
-    return '<span style="font:400 13px \'Libre Franklin\';color:' + C.faint + ';font-style:italic">Aucun filtre disponible pour ces itinéraires.</span>';
-  }
-
-  return defs.map(function(d) {
+  // Une puce indisponible reste affichée, désactivée et expliquée : la faire
+  // disparaître laissait l'utilisateur sans rien comprendre.
+  var chips = defs.map(function(d) {
+    if (!avail[d[0]]) {
+      return '<span aria-disabled="true" title="' + esc(filterReason(d[0], all)) + '" ' +
+        'style="display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:8px 14px 8px 12px;' +
+        'font:600 13px \'Libre Franklin\';border:1px dashed ' + C.line + ';background:#f7f8fa;' +
+        'color:' + C.faint + ';cursor:not-allowed">' +
+        icon(d[2], 15, C.faint, 2.2) + '<span>' + d[1] + '</span></span>';
+    }
     var on = S.filters[d[0]];
     return '<button onclick="toggleFilter(\'' + d[0] + '\')" style="display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:8px 14px 8px 12px;font:600 13px \'Libre Franklin\';border:' + (on ? '1px solid ' + C.primary : '1px solid ' + C.line) + ';background:' + (on ? '#eaf0fb' : '#fff') + ';color:' + (on ? C.primary : C.mut) + ';transition:all .15s">' +
       icon(d[2], 15, on ? C.primary : C.faint, 2.2) + '<span>' + d[1] + '</span></button>';
   }).join('');
+
+  return chips;
 }
 
+// Rendu separe des chips : evite que filterChips() ferme une balise du parent.
+function filterReasons() {
+  var avail = availableFilters();
+  var all   = S.results ? S.results.itineraires : [];
+  var lignes = [
+    ['access', 'Ascenseurs'],
+    ['crowd',  'Peu de monde'],
+    ['air',    'Climatisé'],
+  ].filter(function(d) { return !avail[d[0]]; }).map(function(d) {
+    return '<div style="font:400 12px/1.5 \'Libre Franklin\';color:' + C.faint + '">' +
+      '<strong style="font-weight:600">' + d[1] + '</strong> indisponible — ' +
+      esc(filterReason(d[0], all)) + '.</div>';
+  }).join('');
+
+  return lignes
+    ? '<div style="margin-top:10px;display:flex;flex-direction:column;gap:3px">' + lignes + '</div>'
+    : '';
+}
 function switcher() {
   var opts = [['A','Sobre'],['B','Carte'],['C','Comparatif']];
   return '<div style="display:flex;gap:3px;background:#e7ebef;border-radius:10px;padding:3px">' +
@@ -682,6 +722,7 @@ function screenResults() {
       '<div style="font:500 12px \'IBM Plex Mono\';color:' + C.faint + '">' + opts.length + ' / ' + all.length + '</div>' +
     '</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:8px">' + filterChips() + '</div>' +
+    filterReasons() +
     '<div style="margin-top:20px">' + cardsHtml + '</div>' +
   '</div>';
 }
